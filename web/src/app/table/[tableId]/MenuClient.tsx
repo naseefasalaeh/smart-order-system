@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 
 type MenuOption = {
   id: number;
@@ -31,8 +32,13 @@ type CartItem = {
   basePrice: number;
   quantity: number;
   note: string | null;
-  optionIds: number[];
-  selectedOptions: MenuOption[];
+  optionSelections: Array<{
+    optionId: number;
+    quantity: number;
+  }>;
+  selectedOptions: Array<
+    MenuOption & { quantity: number }
+  >;
   unitPrice: number;
 };
 
@@ -61,6 +67,7 @@ export default function MenuClient({
   tableId,
   tableNumber,
 }: MenuClientProps) {
+  const router = useRouter();
   const [cart, setCart] = useState<CartItem[]>([]);
   const [selectedMenu, setSelectedMenu] =
     useState<Menu | null>(null);
@@ -68,15 +75,33 @@ export default function MenuClient({
   const [selectedSpice, setSelectedSpice] =
     useState("เผ็ดปกติ");
 
-  const [selectedOptionId, setSelectedOptionId] =
-    useState<number | null>(null);
+  const [selectedOptionQuantities, setSelectedOptionQuantities] =
+    useState<Record<number, number>>({});
 
   const [quantity, setQuantity] = useState(1);
+  const [editingCartId, setEditingCartId] =
+    useState<string | null>(null);
   const [orderNote, setOrderNote] = useState("");
   const [showCart, setShowCart] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [successMessage, setSuccessMessage] = useState("");
   const [errorMessage, setErrorMessage] = useState("");
+  function getOrCreateSessionToken() {
+    const storageKey = `smart-order-session-${tableNumber}`;
+    const existingToken = window.localStorage.getItem(storageKey);
+    const uuidPattern =
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+    const token =
+      existingToken && uuidPattern.test(existingToken)
+        ? existingToken
+        : window.crypto.randomUUID();
+
+    if (existingToken !== token) {
+      window.localStorage.setItem(storageKey, token);
+    }
+
+    return token;
+  }
 
   const cartQuantity = useMemo(
     () =>
@@ -97,21 +122,30 @@ export default function MenuClient({
     [cart]
   );
 
-  const selectedOption = useMemo(() => {
-    if (!selectedMenu || selectedOptionId === null) {
-      return null;
-    }
+  const selectedOptions = useMemo(
+    () =>
+      (selectedMenu?.options ?? [])
+        .map((option) => ({
+          ...option,
+          quantity:
+            selectedOptionQuantities[option.id] ?? 0,
+        }))
+        .filter((option) => option.quantity > 0),
+    [selectedMenu, selectedOptionQuantities]
+  );
 
-    return (
-      selectedMenu.options.find(
-        (option) => option.id === selectedOptionId
-      ) ?? null
-    );
-  }, [selectedMenu, selectedOptionId]);
+  const totalOptionQuantity = selectedOptions.reduce(
+    (total, option) => total + option.quantity,
+    0
+  );
 
   const selectedUnitPrice =
     (selectedMenu?.price ?? 0) +
-    (selectedOption?.additional_price ?? 0);
+    selectedOptions.reduce(
+      (total, option) =>
+        total + option.additional_price * option.quantity,
+      0
+    );
 
   function openMenuOptions(menu: Menu) {
     if (!menu.can_order) {
@@ -120,16 +154,45 @@ export default function MenuClient({
 
     setSelectedMenu(menu);
     setSelectedSpice("เผ็ดปกติ");
-    setSelectedOptionId(null);
+    setSelectedOptionQuantities({});
     setQuantity(1);
+    setEditingCartId(null);
     setErrorMessage("");
     setSuccessMessage("");
   }
 
   function closeMenuOptions() {
     setSelectedMenu(null);
-    setSelectedOptionId(null);
+    setSelectedOptionQuantities({});
     setQuantity(1);
+    setEditingCartId(null);
+  }
+
+  function editCartItem(item: CartItem) {
+    const menu = menus.find(
+      (currentMenu) => currentMenu.id === item.menuId
+    );
+
+    if (!menu) {
+      setErrorMessage("ไม่พบข้อมูลเมนูที่ต้องการแก้ไข");
+      return;
+    }
+
+    setSelectedMenu(menu);
+    setSelectedSpice(item.note ?? "เผ็ดปกติ");
+    setSelectedOptionQuantities(
+      Object.fromEntries(
+        item.optionSelections.map((selection) => [
+          selection.optionId,
+          selection.quantity,
+        ])
+      )
+    );
+    setQuantity(item.quantity);
+    setEditingCartId(item.cartId);
+    setShowCart(false);
+    setErrorMessage("");
+    setSuccessMessage("");
   }
 
   function addToCart() {
@@ -137,9 +200,7 @@ export default function MenuClient({
       return;
     }
 
-    const options = selectedOption
-      ? [selectedOption]
-      : [];
+    const wasEditing = editingCartId !== null;
 
     const newItem: CartItem = {
       cartId: createCartId(),
@@ -148,18 +209,36 @@ export default function MenuClient({
       basePrice: selectedMenu.price,
       quantity,
       note: selectedSpice,
-      optionIds: options.map((option) => option.id),
-      selectedOptions: options,
+      optionSelections: selectedOptions.map((option) => ({
+        optionId: option.id,
+        quantity: option.quantity,
+      })),
+      selectedOptions,
       unitPrice: selectedUnitPrice,
     };
 
-    setCart((currentCart) => [
-      ...currentCart,
-      newItem,
-    ]);
+    setCart((currentCart) =>
+      wasEditing
+        ? currentCart.map((item) =>
+            item.cartId === editingCartId
+              ? {
+                  ...newItem,
+                  cartId: editingCartId,
+                }
+              : item
+          )
+        : [...currentCart, newItem]
+    );
 
     closeMenuOptions();
-    setSuccessMessage("เพิ่มเมนูลงตะกร้าแล้ว");
+    if (wasEditing) {
+      setShowCart(true);
+    }
+    setSuccessMessage(
+      wasEditing
+        ? "แก้ไขรายการในตะกร้าแล้ว"
+        : "เพิ่มเมนูลงตะกร้าแล้ว"
+    );
     setErrorMessage("");
 
     window.setTimeout(() => {
@@ -217,6 +296,7 @@ export default function MenuClient({
     setIsSubmitting(true);
     setErrorMessage("");
     setSuccessMessage("");
+    const sessionToken = getOrCreateSessionToken();
 
     try {
       const response = await fetch("/api/orders", {
@@ -226,12 +306,13 @@ export default function MenuClient({
         },
         body: JSON.stringify({
           tableId,
+          sessionToken,
           note: orderNote.trim() || undefined,
           items: cart.map((item) => ({
             menuId: item.menuId,
             quantity: item.quantity,
             note: item.note ?? undefined,
-            optionIds: item.optionIds,
+            optionSelections: item.optionSelections,
           })),
         }),
       });
@@ -273,6 +354,8 @@ export default function MenuClient({
           ? `สั่งอาหารสำเร็จ เลขที่ออเดอร์ ${orderNumber}`
           : "สั่งอาหารสำเร็จ"
       );
+
+      router.push(`/table/${tableNumber}/orders`);
     } catch (error) {
       setErrorMessage(
         error instanceof Error
@@ -335,12 +418,6 @@ export default function MenuClient({
                 {menu.description ||
                   "ไม่มีรายละเอียดเพิ่มเติม"}
               </p>
-
-              {menu.options.length > 0 && (
-                <p className="mt-2 text-xs text-orange-600">
-                  สามารถเลือกเพิ่มไข่ได้
-                </p>
-              )}
 
               <div className="mt-5 flex items-center justify-between gap-3">
                 <p className="text-xl font-bold text-orange-500">
@@ -457,68 +534,63 @@ export default function MenuClient({
                 </p>
 
                 <p className="mt-1 text-xs text-zinc-500">
-                  เลือกได้ 1 รายการ
+                  เลือกได้หลายชนิด รวมสูงสุด 3 รายการต่อจาน
                 </p>
 
                 <div className="mt-3 space-y-3">
-                  <label className="flex cursor-pointer items-center justify-between rounded-xl border border-zinc-200 p-4">
-                    <div className="flex items-center gap-3">
-                      <input
-                        type="radio"
-                        name="menu-option"
-                        checked={
-                          selectedOptionId === null
-                        }
-                        onChange={() =>
-                          setSelectedOptionId(null)
-                        }
-                        className="h-4 w-4 accent-orange-500"
-                      />
-
-                      <span className="font-medium text-zinc-700">
-                        ไม่เพิ่ม
-                      </span>
-                    </div>
-
-                    <span className="text-sm text-zinc-500">
-                      0 บาท
-                    </span>
-                  </label>
-
                   {selectedMenu.options.map((option) => (
-                    <label
+                    <div
                       key={option.id}
-                      className="flex cursor-pointer items-center justify-between rounded-xl border border-zinc-200 p-4"
+                      className="flex items-center justify-between gap-4 rounded-xl border border-zinc-200 p-4"
                     >
-                      <div className="flex items-center gap-3">
-                        <input
-                          type="radio"
-                          name="menu-option"
-                          checked={
-                            selectedOptionId ===
-                            option.id
-                          }
-                          onChange={() =>
-                            setSelectedOptionId(
-                              option.id
-                            )
-                          }
-                          className="h-4 w-4 accent-orange-500"
-                        />
-
+                      <div>
                         <span className="font-medium text-zinc-700">
                           {option.name}
                         </span>
+
+                        <p className="mt-1 text-sm font-semibold text-orange-500">
+                          +{formatPrice(option.additional_price)} บาทต่อชิ้น
+                        </p>
                       </div>
 
-                      <span className="text-sm font-semibold text-orange-500">
-                        +
-                        {formatPrice(
-                          option.additional_price
-                        )}{" "}
-                        บาท
-                      </span>
-                    </label>
+                      <div className="flex items-center overflow-hidden rounded-lg border border-zinc-200">
+                        <button
+                          type="button"
+                          aria-label={`ลดจำนวน${option.name}`}
+                          onClick={() =>
+                            setSelectedOptionQuantities((current) => ({
+                              ...current,
+                              [option.id]: Math.max(
+                                0,
+                                (current[option.id] ?? 0) - 1
+                              ),
+                            }))
+                          }
+                          className="h-9 w-10 text-lg hover:bg-zinc-100"
+                        >
+                          −
+                        </button>
+
+                        <span className="flex h-9 min-w-10 items-center justify-center border-x border-zinc-200 text-sm font-bold">
+                          {selectedOptionQuantities[option.id] ?? 0}
+                        </span>
+
+                        <button
+                          type="button"
+                          aria-label={`เพิ่มจำนวน${option.name}`}
+                          disabled={totalOptionQuantity >= 3}
+                          onClick={() =>
+                            setSelectedOptionQuantities((current) => ({
+                              ...current,
+                              [option.id]: (current[option.id] ?? 0) + 1,
+                            }))
+                          }
+                          className="h-9 w-10 text-lg hover:bg-zinc-100 disabled:cursor-not-allowed disabled:text-zinc-300"
+                        >
+                          +
+                        </button>
+                      </div>
+                    </div>
                   ))}
                 </div>
               </div>
@@ -565,7 +637,10 @@ export default function MenuClient({
               onClick={addToCart}
               className="mt-8 w-full rounded-xl bg-orange-500 px-5 py-4 font-bold text-white transition hover:bg-orange-600"
             >
-              เพิ่มลงตะกร้า ·{" "}
+              {editingCartId
+                ? "บันทึกการแก้ไข"
+                : "เพิ่มลงตะกร้า"}{" "}
+              ·{" "}
               {formatPrice(
                 selectedUnitPrice * quantity
               )}{" "}
@@ -622,18 +697,19 @@ export default function MenuClient({
                           {item.menuName}
                         </h3>
 
-                        {item.selectedOptions.length >
-                          0 && (
-                          <p className="mt-1 text-sm text-orange-600">
-                            {item.selectedOptions
-                              .map(
-                                (option) =>
-                                  `${option.name} +${formatPrice(
-                                    option.additional_price
-                                  )} บาท`
-                              )
-                              .join(", ")}
-                          </p>
+                        {item.selectedOptions.length > 0 && (
+                          <div className="mt-1 space-y-1 text-sm text-orange-600">
+                            {item.selectedOptions.map((option) => (
+                              <p key={option.id}>
+                                {option.name} × {option.quantity}
+                                {" +"}
+                                {formatPrice(
+                                  option.additional_price * option.quantity
+                                )}{" "}
+                                บาทต่อจาน
+                              </p>
+                            ))}
+                          </div>
                         )}
 
                         {item.note && (
@@ -643,15 +719,25 @@ export default function MenuClient({
                         )}
                       </div>
 
-                      <button
-                        type="button"
-                        onClick={() =>
-                          removeCartItem(item.cartId)
-                        }
-                        className="text-sm font-semibold text-red-500"
-                      >
-                        ลบ
-                      </button>
+                      <div className="flex items-center gap-3">
+                        <button
+                          type="button"
+                          onClick={() => editCartItem(item)}
+                          className="text-sm font-semibold text-orange-600"
+                        >
+                          แก้ไข
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() =>
+                            removeCartItem(item.cartId)
+                          }
+                          className="text-sm font-semibold text-red-500"
+                        >
+                          ลบ
+                        </button>
+                      </div>
                     </div>
 
                     <div className="mt-4 flex items-center justify-between gap-4">

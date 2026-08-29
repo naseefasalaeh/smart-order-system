@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import MenuClient from "./MenuClient";
 
@@ -159,14 +160,23 @@ export default async function TablePage({ params }: TablePageProps) {
               </p>
             </div>
 
-            <div className="shrink-0 rounded-xl bg-orange-500 px-4 py-2 text-center">
-              <p className="text-xs text-orange-100">
-                หมายเลขโต๊ะ
-              </p>
+            <div className="flex shrink-0 flex-col items-end gap-2 sm:flex-row sm:items-center">
+              <Link
+                href={`/table/${table.table_number}/orders`}
+                className="rounded-xl border border-orange-400 px-4 py-3 text-sm font-bold text-orange-300 transition hover:bg-orange-500 hover:text-white"
+              >
+                ดูออเดอร์ของฉัน
+              </Link>
 
-              <p className="text-xl font-bold">
-                {table.table_number}
-              </p>
+              <div className="rounded-xl bg-orange-500 px-4 py-2 text-center">
+                <p className="text-xs text-orange-100">
+                  หมายเลขโต๊ะ
+                </p>
+
+                <p className="text-xl font-bold">
+                  {table.table_number}
+                </p>
+              </div>
             </div>
           </div>
         </div>

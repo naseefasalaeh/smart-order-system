@@ -5,11 +5,15 @@ type OrderItemInput = {
   menuId: number;
   quantity: number;
   note?: string;
-  optionIds?: number[];
+  optionSelections?: Array<{
+    optionId: number;
+    quantity: number;
+  }>;
 };
 
 type CreateOrderBody = {
   tableId: string;
+  sessionToken: string;
   items: OrderItemInput[];
   note?: string;
 };
@@ -18,7 +22,10 @@ type ValidatedOrderItem = {
   menuId: number;
   quantity: number;
   note: string | null;
-  optionIds: number[];
+  optionSelections: Array<{
+    optionId: number;
+    quantity: number;
+  }>;
 };
 
 type MenuOptionData = {
@@ -32,13 +39,23 @@ type MenuOptionData = {
 export async function POST(request: Request) {
   try {
     const body = (await request.json()) as CreateOrderBody;
-    const { tableId, items, note } = body;
+    const { tableId, sessionToken, items, note } = body;
 
     const numericTableId = Number(tableId);
 
     if (!Number.isInteger(numericTableId) || numericTableId <= 0) {
       return NextResponse.json(
         { error: "ข้อมูลโต๊ะไม่ถูกต้อง" },
+        { status: 400 },
+      );
+    }
+
+    const uuidPattern =
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+    if (typeof sessionToken !== "string" || !uuidPattern.test(sessionToken)) {
+      return NextResponse.json(
+        { error: "ข้อมูลรอบโต๊ะไม่ถูกต้อง กรุณาสแกน QR ใหม่" },
         { status: 400 },
       );
     }
@@ -72,12 +89,22 @@ export async function POST(request: Request) {
         );
       }
 
-      const rawOptionIds = Array.isArray(item.optionIds) ? item.optionIds : [];
+      const rawOptionSelections = Array.isArray(item.optionSelections)
+        ? item.optionSelections
+        : [];
 
-      const numericOptionIds = rawOptionIds.map((optionId) => Number(optionId));
+      const optionSelections = rawOptionSelections.map((selection) => ({
+        optionId: Number(selection.optionId),
+        quantity: Number(selection.quantity),
+      }));
 
-      const hasInvalidOption = numericOptionIds.some(
-        (optionId) => !Number.isInteger(optionId) || optionId <= 0,
+      const hasInvalidOption = optionSelections.some(
+        (selection) =>
+          !Number.isInteger(selection.optionId) ||
+          selection.optionId <= 0 ||
+          !Number.isInteger(selection.quantity) ||
+          selection.quantity <= 0 ||
+          selection.quantity > 3,
       );
 
       if (hasInvalidOption) {
@@ -87,11 +114,23 @@ export async function POST(request: Request) {
         );
       }
 
-      /*
-       * ลบ option ID ที่ซ้ำกัน
-       * ป้องกันการส่งไข่ดาวตัวเดิมซ้ำเพื่อทำให้ราคาผิด
-       */
-      const uniqueOptionIds = Array.from(new Set(numericOptionIds));
+      const hasDuplicateOption =
+        new Set(optionSelections.map((selection) => selection.optionId)).size !==
+        optionSelections.length;
+      const totalOptionQuantity = optionSelections.reduce(
+        (total, selection) => total + selection.quantity,
+        0,
+      );
+
+      if (hasDuplicateOption || totalOptionQuantity > 3) {
+        return NextResponse.json(
+          {
+            error:
+              "ตัวเลือกเสริมซ้ำกันหรือมีจำนวนรวมเกิน 3 รายการต่อจาน",
+          },
+          { status: 400 },
+        );
+      }
 
       const itemNote =
         typeof item.note === "string" ? item.note.trim().slice(0, 500) : "";
@@ -100,7 +139,7 @@ export async function POST(request: Request) {
         menuId,
         quantity,
         note: itemNote || null,
-        optionIds: uniqueOptionIds,
+        optionSelections,
       });
     }
 
@@ -134,6 +173,56 @@ export async function POST(request: Request) {
         { error: "ไม่พบข้อมูลโต๊ะนี้" },
         { status: 404 },
       );
+    }
+
+    const { data: existingSession, error: sessionReadError } = await supabase
+      .from("dining_sessions")
+      .select("id, table_id, status")
+      .eq("access_token", sessionToken)
+      .maybeSingle();
+
+    if (sessionReadError) {
+      return NextResponse.json(
+        { error: "ตรวจสอบรอบโต๊ะไม่สำเร็จ", details: sessionReadError.message },
+        { status: 500 },
+      );
+    }
+
+    if (
+      existingSession &&
+      (Number(existingSession.table_id) !== numericTableId ||
+        existingSession.status !== "active")
+    ) {
+      return NextResponse.json(
+        { error: "รอบโต๊ะนี้หมดอายุแล้ว กรุณาเริ่มรอบใหม่" },
+        { status: 409 },
+      );
+    }
+
+    let sessionId = existingSession?.id;
+
+    if (!sessionId) {
+      const { data: createdSession, error: sessionCreateError } = await supabase
+        .from("dining_sessions")
+        .insert({
+          table_id: numericTableId,
+          access_token: sessionToken,
+          status: "active",
+        })
+        .select("id")
+        .single();
+
+      if (sessionCreateError || !createdSession) {
+        return NextResponse.json(
+          {
+            error: "เริ่มรอบโต๊ะไม่สำเร็จ",
+            details: sessionCreateError?.message,
+          },
+          { status: 500 },
+        );
+      }
+
+      sessionId = createdSession.id;
     }
 
     /*
@@ -184,7 +273,11 @@ export async function POST(request: Request) {
      * โหลดตัวเลือกทั้งหมดที่ลูกค้าส่งมา
      */
     const allOptionIds = Array.from(
-      new Set(validatedItems.flatMap((item) => item.optionIds)),
+      new Set(
+        validatedItems.flatMap((item) =>
+          item.optionSelections.map((selection) => selection.optionId),
+        ),
+      ),
     );
 
     let menuOptions: MenuOptionData[] = [];
@@ -241,9 +334,9 @@ export async function POST(request: Request) {
        * เช่น ไม่อนุญาตให้นำ option ของข้าวกะเพราไปใส่น้ำเปล่า
        */
       for (const item of validatedItems) {
-        const invalidOptionForMenu = item.optionIds
-          .map((optionId) =>
-            menuOptions.find((option) => option.id === optionId),
+        const invalidOptionForMenu = item.optionSelections
+          .map((selection) =>
+            menuOptions.find((option) => option.id === selection.optionId),
           )
           .find((option) => !option || option.menu_id !== item.menuId);
 
@@ -337,15 +430,18 @@ export async function POST(request: Request) {
        * เช่น 2 จาน + ไข่ดาว จะใช้ไข่ 2 ฟอง
        */
       for (const item of validatedItems) {
-        for (const optionId of item.optionIds) {
+        for (const selection of item.optionSelections) {
           const recipesForOption = optionIngredientRows.filter(
-            (recipe) => Number(recipe.menu_option_id) === optionId,
+            (recipe) =>
+              Number(recipe.menu_option_id) === selection.optionId,
           );
 
           for (const recipe of recipesForOption) {
             const ingredientId = Number(recipe.ingredient_id);
             const requiredAmount =
-              Number(recipe.quantity_required) * item.quantity;
+              Number(recipe.quantity_required) *
+              item.quantity *
+              selection.quantity;
 
             requiredIngredientMap.set(
               ingredientId,
@@ -448,10 +544,10 @@ export async function POST(request: Request) {
         throw new Error("ไม่พบข้อมูลเมนู");
       }
 
-      const selectedOptions = item.optionIds.map((optionId) => {
+      const selectedOptions = item.optionSelections.map((selection) => {
         const option = menuOptions.find(
           (currentOption) =>
-            currentOption.id === optionId &&
+            currentOption.id === selection.optionId &&
             currentOption.menu_id === item.menuId,
         );
 
@@ -459,13 +555,17 @@ export async function POST(request: Request) {
           throw new Error(`ไม่พบตัวเลือกของเมนู ${menu.name}`);
         }
 
-        return option;
+        return {
+          ...option,
+          quantity: selection.quantity,
+        };
       });
 
       const basePrice = Number(menu.price);
 
       const additionalPrice = selectedOptions.reduce(
-        (total, option) => total + option.additional_price,
+        (total, option) =>
+          total + option.additional_price * option.quantity,
         0,
       );
 
@@ -500,13 +600,14 @@ export async function POST(request: Request) {
       .from("orders")
       .insert({
         table_id: numericTableId,
-        status: "pending",
+        session_id: sessionId,
+        status: "confirmed",
         total_amount: totalAmount,
         note: orderNote || null,
         stock_deducted: false,
       })
       .select(
-        "id, order_number, table_id, status, total_amount, stock_deducted",
+        "id, order_number, table_id, session_id, status, total_amount, stock_deducted",
       )
       .single();
 
@@ -569,6 +670,7 @@ export async function POST(request: Request) {
           menu_option_id: option.id,
           option_name: option.name,
           additional_price: option.additional_price,
+          quantity: option.quantity,
         }));
 
         const { error: itemOptionsError } = await supabase
@@ -651,7 +753,7 @@ export async function POST(request: Request) {
     const { data: updatedOrder, error: readOrderError } = await supabase
       .from("orders")
       .select(
-        "id, order_number, table_id, status, total_amount, stock_deducted",
+        "id, order_number, table_id, session_id, status, total_amount, stock_deducted",
       )
       .eq("id", order.id)
       .single();

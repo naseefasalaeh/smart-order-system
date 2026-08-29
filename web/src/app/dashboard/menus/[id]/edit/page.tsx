@@ -348,6 +348,15 @@ export default async function EditMenuPage({
               </button>
             </div>
           </form>
+
+          <div className="mt-6 border-t border-zinc-200 pt-6">
+            <Link
+              href={`/dashboard/menus/${id}/options`}
+              className="inline-flex rounded-xl border border-orange-300 bg-orange-50 px-5 py-3 font-semibold text-orange-700 hover:bg-orange-100"
+            >
+              จัดการตัวเลือกเสริมของเมนูนี้
+            </Link>
+          </div>
         </section>
 
         <section className="mt-6 rounded-2xl bg-white p-6 shadow-sm sm:p-8">
