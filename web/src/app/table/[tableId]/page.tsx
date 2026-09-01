@@ -161,12 +161,21 @@ export default async function TablePage({ params }: TablePageProps) {
             </div>
 
             <div className="flex shrink-0 flex-col items-end gap-2 sm:flex-row sm:items-center">
-              <Link
-                href={`/table/${table.table_number}/orders`}
-                className="rounded-xl border border-orange-400 px-4 py-3 text-sm font-bold text-orange-300 transition hover:bg-orange-500 hover:text-white"
-              >
-                ดูออเดอร์ของฉัน
-              </Link>
+              <div className="flex flex-wrap justify-end gap-2">
+                <Link
+                  href={`/table/${table.table_number}/orders`}
+                  className="rounded-xl border border-orange-400 px-4 py-3 text-sm font-bold text-orange-300 transition hover:bg-orange-500 hover:text-white"
+                >
+                  ดูออเดอร์ของฉัน
+                </Link>
+
+                <Link
+                  href={`/table/${table.table_number}/queue`}
+                  className="rounded-xl border border-orange-400 px-4 py-3 text-sm font-bold text-orange-300 transition hover:bg-orange-500 hover:text-white"
+                >
+                  ดูคิวร้าน
+                </Link>
+              </div>
 
               <div className="rounded-xl bg-orange-500 px-4 py-2 text-center">
                 <p className="text-xs text-orange-100">

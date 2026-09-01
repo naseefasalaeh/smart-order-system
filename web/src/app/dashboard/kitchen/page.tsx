@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import LogoutButton from "@/components/logout-button";
+import OrderRealtimeRefresh from "@/components/order-realtime-refresh";
 import UpdateOrderStatusButton from "@/components/update-order-status-button";
 import { createClient } from "@/lib/supabase/server";
 
@@ -63,6 +64,8 @@ export default async function KitchenPage() {
 
   return (
     <main className="min-h-screen bg-orange-50 lg:flex">
+      <OrderRealtimeRefresh channelName="staff-kitchen" />
+
       <aside className="w-full bg-zinc-900 p-6 text-white lg:min-h-screen lg:w-64">
         <p className="text-sm font-semibold text-orange-400">
           SMART ORDER

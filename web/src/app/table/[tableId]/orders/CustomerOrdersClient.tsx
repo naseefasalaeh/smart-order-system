@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 type OrderOption = {
   id: number;
@@ -46,17 +46,54 @@ export default function CustomerOrdersClient({ tableNumber }: { tableNumber: num
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [connectionWarning, setConnectionWarning] = useState(false);
+  const hasLoadedSuccessfullyRef = useRef(false);
+  const isSessionActiveRef = useRef(true);
+  const pollingTimerRef = useRef<number | null>(null);
+  const requestControllerRef = useRef<AbortController | null>(null);
 
-  const loadOrders = useCallback(async () => {
+  const stopPolling = useCallback((abortRequest = false) => {
+    if (pollingTimerRef.current) {
+      window.clearInterval(pollingTimerRef.current);
+      pollingTimerRef.current = null;
+    }
+
+    if (abortRequest) {
+      requestControllerRef.current?.abort();
+      requestControllerRef.current = null;
+    }
+  }, []);
+
+  const loadOrders = useCallback(async (replaceInFlight = false) => {
+    if (
+      !isSessionActiveRef.current ||
+      !navigator.onLine ||
+      document.visibilityState !== "visible"
+    ) {
+      return;
+    }
+
+    if (requestControllerRef.current) {
+      if (!replaceInFlight) return;
+
+      requestControllerRef.current.abort();
+    }
+
     const sessionToken = window.localStorage.getItem(
       `smart-order-session-${tableNumber}`,
     );
 
     if (!sessionToken) {
+      isSessionActiveRef.current = false;
+      stopPolling();
       setOrders([]);
+      setConnectionWarning(false);
       setLoading(false);
       return;
     }
+
+    const controller = new AbortController();
+    requestControllerRef.current = controller;
 
     try {
       const response = await fetch("/api/customer-orders", {
@@ -64,6 +101,7 @@ export default function CustomerOrdersClient({ tableNumber }: { tableNumber: num
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ tableNumber, sessionToken }),
         cache: "no-store",
+        signal: controller.signal,
       });
       const result = await response.json();
 
@@ -71,29 +109,106 @@ export default function CustomerOrdersClient({ tableNumber }: { tableNumber: num
         throw new Error(result.details || result.error || "โหลดออเดอร์ไม่สำเร็จ");
       }
 
+      hasLoadedSuccessfullyRef.current = true;
+      setConnectionWarning(false);
+      setError("");
+
       if (result.session?.status === "closed") {
+        isSessionActiveRef.current = false;
+        stopPolling();
         window.localStorage.removeItem(
           `smart-order-session-${tableNumber}`,
         );
+        setOrders([]);
+        setError("");
+        return;
+      }
+
+      if (!result.session || result.session.status !== "active") {
+        isSessionActiveRef.current = false;
+        stopPolling();
+        setOrders([]);
+        setError("");
+        return;
       }
 
       setOrders(result.orders ?? []);
-      setError("");
     } catch (loadError) {
-      setError(loadError instanceof Error ? loadError.message : "โหลดออเดอร์ไม่สำเร็จ");
+      if (loadError instanceof Error && loadError.name === "AbortError") {
+        return;
+      }
+
+      setConnectionWarning(true);
+
+      if (!hasLoadedSuccessfullyRef.current) {
+        setError("ไม่สามารถโหลดข้อมูลออเดอร์ได้ กรุณาตรวจสอบการเชื่อมต่อแล้วลองใหม่");
+      }
     } finally {
-      setLoading(false);
+      if (requestControllerRef.current === controller) {
+        requestControllerRef.current = null;
+        setLoading(false);
+      }
     }
-  }, [tableNumber]);
+  }, [stopPolling, tableNumber]);
 
   useEffect(() => {
-    const initialTimer = window.setTimeout(() => void loadOrders(), 0);
-    const timer = window.setInterval(() => void loadOrders(), 5000);
+    const canPoll = () =>
+      isSessionActiveRef.current &&
+      navigator.onLine &&
+      document.visibilityState === "visible";
+
+    const startPolling = (loadImmediately = false) => {
+      if (!canPoll()) return;
+
+      if (!pollingTimerRef.current) {
+        pollingTimerRef.current = window.setInterval(
+          () => void loadOrders(),
+          5000,
+        );
+      }
+
+      if (loadImmediately) {
+        void loadOrders(true);
+      }
+    };
+
+    const handleOnline = () => startPolling(true);
+    const handleOffline = () => {
+      stopPolling(true);
+      setConnectionWarning(true);
+      setLoading(false);
+
+      if (!hasLoadedSuccessfullyRef.current) {
+        setError("ไม่สามารถโหลดข้อมูลออเดอร์ได้ กรุณาตรวจสอบการเชื่อมต่อแล้วลองใหม่");
+      }
+    };
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "visible") {
+        startPolling(true);
+      } else {
+        stopPolling(true);
+      }
+    };
+
+    window.addEventListener("online", handleOnline);
+    window.addEventListener("offline", handleOffline);
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    const initialTimer = window.setTimeout(() => {
+      if (navigator.onLine) {
+        startPolling(true);
+      } else {
+        handleOffline();
+      }
+    }, 0);
+
     return () => {
       window.clearTimeout(initialTimer);
-      window.clearInterval(timer);
+      stopPolling(true);
+      window.removeEventListener("online", handleOnline);
+      window.removeEventListener("offline", handleOffline);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
     };
-  }, [loadOrders]);
+  }, [loadOrders, stopPolling]);
 
   const total = useMemo(
     () =>
@@ -119,6 +234,12 @@ export default function CustomerOrdersClient({ tableNumber }: { tableNumber: num
             สั่งเพิ่ม
           </Link>
         </div>
+
+        {connectionWarning && (
+          <div className="mt-4 rounded-xl bg-yellow-50 px-4 py-3 text-sm text-yellow-800">
+            ขาดการเชื่อมต่อ กำลังรอเชื่อมต่อใหม่
+          </div>
+        )}
 
         {loading ? (
           <div className="mt-8 rounded-2xl bg-white p-8 text-center">กำลังโหลดออเดอร์...</div>
