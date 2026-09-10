@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useMemo, useState } from "react";
+import CatalogDeleteButton from "@/components/catalog-delete-button";
 
 type IngredientCategory = {
   id: number;
@@ -156,6 +157,7 @@ export default function IngredientsClient({
                       >
                         แก้ไข
                       </Link>
+                      <CatalogDeleteButton kind="ingredient" id={ingredient.id} name={ingredient.name} />
                     </td>
                   </tr>
                 );

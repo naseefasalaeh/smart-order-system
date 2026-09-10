@@ -3,7 +3,7 @@ begin
   if not exists (
     select 1
     from pg_publication_tables
-    where publicationname = 'supabase_realtime'
+    where pubname = 'supabase_realtime'
       and schemaname = 'public'
       and tablename = 'orders'
   ) then

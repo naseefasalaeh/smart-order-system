@@ -2,6 +2,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import LogoutButton from "@/components/logout-button";
+import CatalogDeleteButton from "@/components/catalog-delete-button";
 
 const menuItems = [
   { name: "ภาพรวม", href: "/dashboard" },
@@ -13,7 +14,10 @@ const menuItems = [
   { name: "รายงาน", href: "/dashboard/reports" },
 ];
 
-export default async function MenusPage() {
+export default async function MenusPage({ searchParams }: {
+  searchParams: Promise<{ success?: string }>;
+}) {
+  const { success } = await searchParams;
   const supabase = await createClient();
 
   const {
@@ -114,9 +118,10 @@ export default async function MenusPage() {
             </Link>
           </header>
 
+          {success && <p role="status" className="mt-6 rounded-xl bg-green-50 p-4 text-green-700">{success}</p>}
           {error ? (
             <div className="mt-8 rounded-2xl bg-red-50 p-6 text-red-700">
-              ไม่สามารถโหลดข้อมูลเมนูได้: {error.message}
+              ไม่สามารถโหลดข้อมูลเมนูได้ กรุณาลองใหม่
             </div>
           ) : !menus || menus.length === 0 ? (
             <div className="mt-8 rounded-2xl border border-dashed border-zinc-300 bg-white px-6 py-16 text-center">
@@ -230,6 +235,7 @@ export default async function MenusPage() {
                           >
                             แก้ไข
                           </Link>
+                          <CatalogDeleteButton kind="menu" id={Number(menu.id)} name={menu.name} />
                         </td>
                       </tr>
                     ))}

@@ -3,7 +3,12 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 
-export default async function NewMenuPage() {
+export default async function NewMenuPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ error?: string }>;
+}) {
+  const query = await searchParams;
   const supabase = await createClient();
 
   const {
@@ -18,11 +23,17 @@ export default async function NewMenuPage() {
     .from("categories")
     .select("id, name")
     .order("name", { ascending: true });
+  if (categoriesError) console.error("โหลดหมวดหมู่เมนูไม่สำเร็จ", categoriesError);
 
   async function addMenu(formData: FormData) {
     "use server";
 
     const supabase = await createClient();
+    const {
+      data: { user: actionUser },
+    } = await supabase.auth.getUser();
+
+    if (!actionUser) redirect("/login");
 
     const name = String(formData.get("name") ?? "").trim();
     const description = String(
@@ -43,25 +54,30 @@ export default async function NewMenuPage() {
       Number.isNaN(price) ||
       price < 0
     ) {
-      return;
+      redirect("/dashboard/menus/new?error=" + encodeURIComponent("กรุณากรอกข้อมูลเมนูให้ถูกต้อง"));
     }
 
-    const { error } = await supabase.from("menus").insert({
-      name,
-      description: description || null,
-      category_id: categoryId,
-      price,
-      image_url: imageUrl || null,
-      is_available: isAvailable,
-    });
+    const { data: createdMenu, error } = await supabase
+      .from("menus")
+      .insert({
+        name,
+        description: description || null,
+        category_id: categoryId,
+        price,
+        image_url: imageUrl || null,
+        is_available: isAvailable,
+      })
+      .select("id")
+      .single();
 
-    if (error) {
-      throw new Error(`ไม่สามารถเพิ่มเมนูได้: ${error.message}`);
+    if (error || !createdMenu) {
+      console.error("เพิ่มเมนูไม่สำเร็จ", error);
+      redirect("/dashboard/menus/new?error=" + encodeURIComponent("เพิ่มเมนูไม่สำเร็จ กรุณาลองใหม่"));
     }
 
     revalidatePath("/dashboard");
     revalidatePath("/dashboard/menus");
-    redirect("/dashboard/menus");
+    redirect(`/dashboard/menus/${createdMenu.id}/edit?tab=recipe&success=${encodeURIComponent("สร้างเมนูแล้ว กรุณากำหนดสูตรพื้นฐานและกลุ่มตัวเลือก")}`);
   }
 
   return (
@@ -87,9 +103,15 @@ export default async function NewMenuPage() {
             กรอกข้อมูล ราคา หมวดหมู่ และสถานะการขาย
           </p>
 
+          {query.error && (
+            <div className="mt-6 rounded-xl bg-red-50 p-4 text-red-700">
+              {query.error}
+            </div>
+          )}
+
           {categoriesError ? (
             <div className="mt-6 rounded-xl bg-red-50 p-4 text-red-700">
-              ไม่สามารถโหลดหมวดหมู่ได้: {categoriesError.message}
+              ไม่สามารถโหลดหมวดหมู่ได้ กรุณาลองใหม่
             </div>
           ) : !categories || categories.length === 0 ? (
             <div className="mt-6 rounded-xl bg-yellow-50 p-4 text-yellow-800">

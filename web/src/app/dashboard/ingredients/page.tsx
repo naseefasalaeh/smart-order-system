@@ -14,7 +14,10 @@ const menuItems = [
   { name: "รายงาน", href: "/dashboard/reports" },
 ];
 
-export default async function IngredientsPage() {
+export default async function IngredientsPage({ searchParams }: {
+  searchParams: Promise<{ success?: string }>;
+}) {
+  const { success } = await searchParams;
   const supabase = await createClient();
   const {
     data: { user },
@@ -114,6 +117,7 @@ export default async function IngredientsPage() {
             </div>
           </header>
 
+          {success && <p role="status" className="mt-6 rounded-xl bg-green-50 p-4 text-green-700">{success}</p>}
           {error ? (
             <div className="mt-8 rounded-2xl bg-red-50 p-6 text-red-700">
               ไม่สามารถโหลดข้อมูลวัตถุดิบได้ กรุณาลองใหม่

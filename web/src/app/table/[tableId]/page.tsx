@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { loadCustomerMenuCatalog } from "@/lib/customer-menu-catalog";
 import { createClient } from "@/lib/supabase/server";
 import MenuClient from "./MenuClient";
 
@@ -38,6 +39,7 @@ export default async function TablePage({ params }: TablePageProps) {
     .maybeSingle();
 
   if (tableError) {
+    console.error("โหลดข้อมูลโต๊ะไม่สำเร็จ", tableError);
     return (
       <main className="min-h-screen bg-zinc-100 px-5 py-16">
         <div className="mx-auto max-w-xl rounded-2xl bg-white p-8 shadow-sm">
@@ -49,9 +51,9 @@ export default async function TablePage({ params }: TablePageProps) {
             หมายเลขโต๊ะ: {tableId}
           </p>
 
-          <pre className="mt-4 overflow-x-auto whitespace-pre-wrap rounded-xl bg-zinc-100 p-4 text-sm text-red-700">
-            {JSON.stringify(tableError, null, 2)}
-          </pre>
+          <p className="mt-3 text-center text-sm text-zinc-600">
+            กรุณาลองใหม่อีกครั้งหรือติดต่อพนักงาน
+          </p>
         </div>
       </main>
     );
@@ -77,69 +79,15 @@ export default async function TablePage({ params }: TablePageProps) {
     );
   }
 
-  /*
-   * โหลดเมนูพร้อมตัวเลือก เช่น ไข่ดาวและไข่เจียว
-   */
-  const { data: menus, error: menuError } = await supabase
-    .from("menus")
-    .select(`
-      id,
-      name,
-      description,
-      price,
-      image_url,
-      is_available,
-      menu_options (
-        id,
-        name,
-        additional_price,
-        is_available,
-        sort_order
-      )
-    `)
-    .eq("is_available", true)
-    .order("created_at", { ascending: false });
+  let finalMenus = [] as Awaited<ReturnType<typeof loadCustomerMenuCatalog>>;
+  let loadError = false;
 
-  /*
-   * โหลดสถานะวัตถุดิบของแต่ละเมนู
-   */
-  const { data: availability, error: availabilityError } =
-    await supabase
-      .from("menu_stock_availability")
-      .select("menu_id, can_order");
-
-  const availabilityMap = new Map<number, boolean>(
-    (availability ?? []).map((item) => [
-      Number(item.menu_id),
-      Boolean(item.can_order),
-    ])
-  );
-
-  const finalMenus = (menus ?? []).map((menu) => ({
-    id: Number(menu.id),
-    name: String(menu.name),
-    description: menu.description
-      ? String(menu.description)
-      : null,
-    price: Number(menu.price),
-    image_url: menu.image_url ? String(menu.image_url) : null,
-    can_order:
-      availabilityMap.get(Number(menu.id)) ?? false,
-    options: (menu.menu_options ?? [])
-      .filter((option) => Boolean(option.is_available))
-      .sort(
-        (firstOption, secondOption) =>
-          Number(firstOption.sort_order) -
-          Number(secondOption.sort_order)
-      )
-      .map((option) => ({
-        id: Number(option.id),
-        name: String(option.name),
-        additional_price: Number(option.additional_price),
-      })),
-  }));
-
-  const loadError = menuError ?? availabilityError;
+  try {
+    finalMenus = await loadCustomerMenuCatalog();
+  } catch (error) {
+    loadError = true;
+    console.error("โหลด customer menu catalog ไม่สำเร็จ", error);
+  }
 
   return (
     <main className="min-h-screen bg-zinc-100 pb-32">
@@ -208,9 +156,7 @@ export default async function TablePage({ params }: TablePageProps) {
               ไม่สามารถโหลดรายการอาหารได้
             </p>
 
-            <pre className="mt-3 overflow-x-auto whitespace-pre-wrap text-sm">
-              {JSON.stringify(loadError, null, 2)}
-            </pre>
+            <p className="mt-2 text-sm">กรุณาลองใหม่อีกครั้งหรือติดต่อพนักงาน</p>
           </div>
         ) : finalMenus.length === 0 ? (
           <div className="mt-8 rounded-2xl bg-white p-10 text-center shadow-sm">
