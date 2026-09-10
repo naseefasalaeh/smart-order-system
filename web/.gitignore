@@ -12,6 +12,7 @@
 
 # testing
 /coverage
+/.test-artifacts/
 
 # next.js
 /.next/
@@ -35,6 +36,9 @@ yarn-error.log*
 
 # vercel
 .vercel
+
+# Supabase CLI local link metadata
+/supabase/.temp/
 
 # typescript
 *.tsbuildinfo

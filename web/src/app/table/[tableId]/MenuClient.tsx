@@ -7,6 +7,21 @@ type MenuOption = {
   id: number;
   name: string;
   additional_price: number;
+  max_quantity: number;
+  max_available_quantity: number;
+  is_available: boolean;
+};
+
+type MenuOptionGroup = {
+  key: string;
+  id: number | null;
+  name: string;
+  selection_type: "single" | "multiple";
+  is_required: boolean;
+  min_select: number;
+  max_select: number;
+  max_total_quantity: number;
+  options: MenuOption[];
 };
 
 type Menu = {
@@ -16,7 +31,7 @@ type Menu = {
   price: number;
   image_url: string | null;
   can_order: boolean;
-  options: MenuOption[];
+  option_groups: MenuOptionGroup[];
 };
 
 type MenuClientProps = {
@@ -36,18 +51,9 @@ type CartItem = {
     optionId: number;
     quantity: number;
   }>;
-  selectedOptions: Array<
-    MenuOption & { quantity: number }
-  >;
+  selectedOptions: Array<MenuOption & { quantity: number; group_name: string }>;
   unitPrice: number;
 };
-
-const spiceLevels = [
-  "ไม่เผ็ด",
-  "เผ็ดน้อย",
-  "เผ็ดปกติ",
-  "เผ็ดมาก",
-];
 
 function formatPrice(price: number) {
   return new Intl.NumberFormat("th-TH", {
@@ -71,9 +77,6 @@ export default function MenuClient({
   const [cart, setCart] = useState<CartItem[]>([]);
   const [selectedMenu, setSelectedMenu] =
     useState<Menu | null>(null);
-
-  const [selectedSpice, setSelectedSpice] =
-    useState("เผ็ดปกติ");
 
   const [selectedOptionQuantities, setSelectedOptionQuantities] =
     useState<Record<number, number>>({});
@@ -124,19 +127,16 @@ export default function MenuClient({
 
   const selectedOptions = useMemo(
     () =>
-      (selectedMenu?.options ?? [])
-        .map((option) => ({
-          ...option,
-          quantity:
-            selectedOptionQuantities[option.id] ?? 0,
-        }))
+      (selectedMenu?.option_groups ?? [])
+        .flatMap((group) =>
+          group.options.map((option) => ({
+            ...option,
+            group_name: group.name,
+            quantity: selectedOptionQuantities[option.id] ?? 0,
+          })),
+        )
         .filter((option) => option.quantity > 0),
     [selectedMenu, selectedOptionQuantities]
-  );
-
-  const totalOptionQuantity = selectedOptions.reduce(
-    (total, option) => total + option.quantity,
-    0
   );
 
   const selectedUnitPrice =
@@ -153,7 +153,6 @@ export default function MenuClient({
     }
 
     setSelectedMenu(menu);
-    setSelectedSpice("เผ็ดปกติ");
     setSelectedOptionQuantities({});
     setQuantity(1);
     setEditingCartId(null);
@@ -179,7 +178,6 @@ export default function MenuClient({
     }
 
     setSelectedMenu(menu);
-    setSelectedSpice(item.note ?? "เผ็ดปกติ");
     setSelectedOptionQuantities(
       Object.fromEntries(
         item.optionSelections.map((selection) => [
@@ -200,6 +198,31 @@ export default function MenuClient({
       return;
     }
 
+    for (const group of selectedMenu.option_groups) {
+      const groupSelections = group.options.filter(
+        (option) => (selectedOptionQuantities[option.id] ?? 0) > 0,
+      );
+      const totalQuantity = groupSelections.reduce(
+        (total, option) => total + (selectedOptionQuantities[option.id] ?? 0),
+        0,
+      );
+
+      if (groupSelections.length < group.min_select) {
+        setErrorMessage(
+          `กรุณาเลือก “${group.name}” อย่างน้อย ${group.min_select} รายการ`,
+        );
+        return;
+      }
+
+      if (
+        groupSelections.length > group.max_select ||
+        totalQuantity > group.max_total_quantity
+      ) {
+        setErrorMessage(`ตัวเลือกในกลุ่ม “${group.name}” เกินจำนวนที่กำหนด`);
+        return;
+      }
+    }
+
     const wasEditing = editingCartId !== null;
 
     const newItem: CartItem = {
@@ -208,7 +231,7 @@ export default function MenuClient({
       menuName: selectedMenu.name,
       basePrice: selectedMenu.price,
       quantity,
-      note: selectedSpice,
+      note: null,
       optionSelections: selectedOptions.map((option) => ({
         optionId: option.id,
         quantity: option.quantity,
@@ -502,48 +525,83 @@ export default function MenuClient({
               </button>
             </div>
 
-            <div className="mt-7">
-              <p className="font-bold text-zinc-900">
-                ระดับความเผ็ด
-              </p>
+            {selectedMenu.option_groups.map((group) => {
+              const groupSelections = group.options.filter(
+                (option) => (selectedOptionQuantities[option.id] ?? 0) > 0,
+              );
+              const groupTotalQuantity = groupSelections.reduce(
+                (total, option) =>
+                  total + (selectedOptionQuantities[option.id] ?? 0),
+                0,
+              );
 
-              <div className="mt-3 grid grid-cols-2 gap-3">
-                {spiceLevels.map((spice) => (
-                  <button
-                    key={spice}
-                    type="button"
-                    onClick={() =>
-                      setSelectedSpice(spice)
-                    }
-                    className={`rounded-xl border px-4 py-3 text-sm font-semibold transition ${
-                      selectedSpice === spice
-                        ? "border-orange-500 bg-orange-50 text-orange-600"
-                        : "border-zinc-200 text-zinc-700 hover:border-orange-300"
-                    }`}
-                  >
-                    {spice}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {selectedMenu.options.length > 0 && (
-              <div className="mt-7">
-                <p className="font-bold text-zinc-900">
-                  ตัวเลือกเพิ่มเติม
-                </p>
+              return (
+              <div key={group.key} className="mt-7">
+                <div className="flex items-center gap-2">
+                  <p className="font-bold text-zinc-900">{group.name}</p>
+                  {group.is_required && (
+                    <span className="rounded-full bg-red-50 px-2 py-0.5 text-xs font-semibold text-red-600">
+                      ต้องเลือก
+                    </span>
+                  )}
+                </div>
 
                 <p className="mt-1 text-xs text-zinc-500">
-                  เลือกได้หลายชนิด รวมสูงสุด 3 รายการต่อจาน
+                  {group.selection_type === "single"
+                    ? "เลือกได้ 1 รายการ"
+                    : `เลือกได้ ${group.min_select}-${group.max_select} ชนิด จำนวนรวมไม่เกิน ${group.max_total_quantity}`}
                 </p>
 
                 <div className="mt-3 space-y-3">
-                  {selectedMenu.options.map((option) => (
+                  {group.options.map((option) => (
                     <div
                       key={option.id}
-                      className="flex items-center justify-between gap-4 rounded-xl border border-zinc-200 p-4"
+                      className={`flex items-center justify-between gap-4 rounded-xl border p-4 ${
+                        option.is_available
+                          ? "border-zinc-200"
+                          : "border-zinc-100 bg-zinc-50 text-zinc-400"
+                      }`}
                     >
-                      <div>
+                      <label className="flex min-w-0 flex-1 items-center gap-3">
+                        {group.selection_type === "single" && (
+                          <input
+                            type="radio"
+                            name={`option-group-${group.key}`}
+                            checked={(selectedOptionQuantities[option.id] ?? 0) === 1}
+                            disabled={!option.is_available}
+                            onChange={() =>
+                              setSelectedOptionQuantities((current) => {
+                                const next = { ...current };
+                                for (const groupOption of group.options) {
+                                  delete next[groupOption.id];
+                                }
+                                next[option.id] = 1;
+                                return next;
+                              })
+                            }
+                            className="h-4 w-4 accent-orange-500"
+                          />
+                        )}
+                        {group.selection_type === "multiple" && (
+                          <input
+                            type="checkbox"
+                            checked={(selectedOptionQuantities[option.id] ?? 0) > 0}
+                            disabled={
+                              !option.is_available ||
+                              ((selectedOptionQuantities[option.id] ?? 0) === 0 &&
+                                (groupSelections.length >= group.max_select ||
+                                  groupTotalQuantity >= group.max_total_quantity))
+                            }
+                            onChange={(event) =>
+                              setSelectedOptionQuantities((current) => ({
+                                ...current,
+                                [option.id]: event.target.checked ? 1 : 0,
+                              }))
+                            }
+                            className="h-4 w-4 accent-orange-500"
+                          />
+                        )}
+                        <div>
                         <span className="font-medium text-zinc-700">
                           {option.name}
                         </span>
@@ -551,8 +609,13 @@ export default function MenuClient({
                         <p className="mt-1 text-sm font-semibold text-orange-500">
                           +{formatPrice(option.additional_price)} บาทต่อชิ้น
                         </p>
+                        {!option.is_available && (
+                          <p className="mt-1 text-xs text-red-500">วัตถุดิบไม่เพียงพอ</p>
+                        )}
                       </div>
+                      </label>
 
+                      {group.selection_type === "multiple" && (
                       <div className="flex items-center overflow-hidden rounded-lg border border-zinc-200">
                         <button
                           type="button"
@@ -578,7 +641,14 @@ export default function MenuClient({
                         <button
                           type="button"
                           aria-label={`เพิ่มจำนวน${option.name}`}
-                          disabled={totalOptionQuantity >= 3}
+                          disabled={
+                            !option.is_available ||
+                            groupTotalQuantity >= group.max_total_quantity ||
+                            ((selectedOptionQuantities[option.id] ?? 0) === 0 &&
+                              groupSelections.length >= group.max_select) ||
+                            (selectedOptionQuantities[option.id] ?? 0) >=
+                              Math.min(option.max_quantity, option.max_available_quantity)
+                          }
                           onClick={() =>
                             setSelectedOptionQuantities((current) => ({
                               ...current,
@@ -590,11 +660,13 @@ export default function MenuClient({
                           +
                         </button>
                       </div>
+                      )}
                     </div>
                   ))}
                 </div>
               </div>
-            )}
+              );
+            })}
 
             <div className="mt-7">
               <p className="font-bold text-zinc-900">
@@ -701,7 +773,7 @@ export default function MenuClient({
                           <div className="mt-1 space-y-1 text-sm text-orange-600">
                             {item.selectedOptions.map((option) => (
                               <p key={option.id}>
-                                {option.name} × {option.quantity}
+                                {option.group_name}: {option.name} × {option.quantity}
                                 {" +"}
                                 {formatPrice(
                                   option.additional_price * option.quantity
@@ -712,11 +784,7 @@ export default function MenuClient({
                           </div>
                         )}
 
-                        {item.note && (
-                          <p className="mt-1 text-sm text-zinc-500">
-                            ระดับความเผ็ด: {item.note}
-                          </p>
-                        )}
+                        {item.note && <p className="mt-1 text-sm text-zinc-500">หมายเหตุ: {item.note}</p>}
                       </div>
 
                       <div className="flex items-center gap-3">

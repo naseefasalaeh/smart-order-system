@@ -1,0 +1,204 @@
+import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { test } from "node:test";
+import vm from "node:vm";
+import ts from "typescript";
+import { PGlite } from "@electric-sql/pglite";
+
+function loadTs(path, imports = {}) {
+  const code = ts.transpileModule(readFileSync(path, "utf8"), {
+    compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
+  }).outputText;
+  const exports = {};
+  vm.runInNewContext(code, { exports, require: (name) => {
+    assert.ok(name in imports, `Unexpected import ${name}`);
+    return imports[name];
+  }, console });
+  return exports;
+}
+const helpers = loadTs("src/lib/catalog-deletion.ts");
+
+test("strict IDs reject forged, unsafe, empty and missing values", () => {
+  for (const value of [null, "", "0", "-1", "1.1", "1e2", " 1", "1 OR 1=1", "9007199254740993", {}]) {
+    assert.equal(helpers.parseCatalogId(value), null);
+  }
+  assert.equal(helpers.parseCatalogId("123"), 123);
+});
+
+function actionHarness({ user = { id: "staff" }, item = { id: 1, name: "ข้าว" }, rpcResult = { data: { status: "deleted" } }, readError = null, throws = false } = {}) {
+  const calls = [];
+  const db = {
+    auth: { getUser: async () => { calls.push("auth"); return { data: { user } }; } },
+    from: () => {
+      calls.push("read");
+      return { select: () => ({ eq: () => ({ maybeSingle: async () => ({ data: item, error: readError }) }) }) };
+    },
+    rpc: async () => { calls.push("rpc"); if (throws) throw new Error("private database detail"); return rpcResult; },
+  };
+  const { deleteCatalogItem } = loadTs("src/app/dashboard/catalog-delete-actions.ts", {
+    "next/cache": { revalidatePath: (...args) => calls.push(args.join(":")) },
+    "@/lib/supabase/server": { createClient: async () => db },
+    "@/lib/catalog-deletion": helpers,
+  });
+  const form = (overrides = {}) => {
+    const data = new FormData();
+    for (const [key, value] of Object.entries({ id: "1", kind: "menu", mode: "delete", confirmation: "ข้าว", ...overrides })) data.set(key, value);
+    return data;
+  };
+  return { action: deleteCatalogItem, form, calls };
+}
+
+test("action authenticates before any read or mutation", async () => {
+  const h = actionHarness({ user: null });
+  assert.equal((await h.action(h.form())).status, "error");
+  assert.deepEqual(h.calls, ["auth"]);
+});
+test("action rejects invalid input, stale names, missing rows and failed reference access", async () => {
+  for (const overrides of [{ id: "no" }, { kind: "orders" }, { mode: "drop" }, { kind: "ingredient", mode: "archive" }, { confirmation: "ปลอม" }]) {
+    const h = actionHarness();
+    assert.equal((await h.action(h.form(overrides))).status, "error");
+    assert.ok(!h.calls.includes("rpc"));
+  }
+  for (const setup of [{ item: null }, { readError: { message: "secret" } }]) {
+    const h = actionHarness(setup);
+    assert.equal((await h.action(h.form())).status, "error");
+    assert.ok(!h.calls.includes("rpc"));
+  }
+});
+test("action returns expected blocks inline, sanitizes errors and revalidates successes", async () => {
+  for (const status of ["deleted", "archived", "used", "recipe", "usage", "not_found", "name_changed"]) {
+    const h = actionHarness({ rpcResult: { data: { status, recipes: ["เมนู A / ตัวเลือก B"] } } });
+    const result = await h.action(h.form());
+    const success = ["deleted", "archived"].includes(status);
+    assert.equal(h.calls.includes("/dashboard:layout"), success);
+    assert.equal(h.calls.includes("/table:layout"), success);
+    if (status === "recipe") assert.match(result.message, /เมนู A \/ ตัวเลือก B/);
+    if (status === "used") assert.equal(result.status, "used");
+  }
+  for (const setup of [{ rpcResult: { error: { code: "23503", message: "secret" } } }, { throws: true }]) {
+    const h = actionHarness(setup);
+    const result = await h.action(h.form());
+    assert.equal(result.status, "error");
+    assert.doesNotMatch(result.message, /secret|private|23503/);
+  }
+});
+
+// Disposable PostgreSQL engine; this suite never reads .env or contacts remote.
+// FK delete rules and relevant pre-migration RLS mirror the metadata audit.
+const fixture = `
+create role anon; create role authenticated;
+create schema auth;
+create function auth.uid() returns uuid language sql stable as
+  $$ select nullif(current_setting('request.jwt.claim.sub', true), '')::uuid $$;
+create function auth.role() returns text language sql stable as
+  $$ select current_setting('request.jwt.claim.role', true) $$;
+grant usage on schema public, auth to anon, authenticated;
+create table public.menus (id bigint primary key, name text not null, is_available boolean default true, updated_at timestamptz);
+create table public.ingredients (id bigint primary key, name text not null, stock_quantity numeric default 100);
+create table public.menu_option_groups (id bigint primary key, menu_id bigint references menus(id) on delete cascade, unique(id, menu_id));
+create table public.menu_options (id bigint generated by default as identity primary key, menu_id bigint references menus(id) on delete cascade, group_id bigint, name text, foreign key(group_id,menu_id) references menu_option_groups(id,menu_id));
+create table public.menu_ingredients (menu_id bigint references menus(id) on delete cascade, ingredient_id bigint constraint menu_ingredients_ingredient_id_fkey references ingredients(id) on delete cascade);
+create table public.menu_option_ingredients (id bigint generated by default as identity primary key, menu_option_id bigint references menu_options(id) on delete cascade, ingredient_id bigint references ingredients(id) on delete restrict);
+create table public.order_items (id bigint primary key, menu_id bigint references menus(id), quantity int default 1, subtotal numeric default 50);
+create table public.order_item_options (id bigint primary key, order_item_id bigint references order_items(id), menu_option_id bigint constraint order_item_options_menu_option_id_fkey references menu_options(id) on delete set null, option_name text);
+create table public.order_ingredient_usages (id bigint primary key, ingredient_id bigint references ingredients(id), quantity_used numeric);
+grant all on all tables in schema public to anon, authenticated;
+revoke all on menu_option_groups from anon, authenticated;
+grant select, insert, update on menu_option_groups to authenticated;
+do $$ declare t text; begin
+  foreach t in array array['menus','ingredients','menu_ingredients','menu_option_groups','menu_options','menu_option_ingredients','order_items','order_item_options','order_ingredient_usages'] loop
+    execute format('alter table public.%I enable row level security', t);
+  end loop;
+  foreach t in array array['menus','ingredients','menu_ingredients','menu_option_groups','order_items'] loop
+    execute format('create policy staff_read on public.%I for select to authenticated using (true)', t);
+  end loop;
+  foreach t in array array['menus','ingredients','menu_ingredients','menu_option_groups'] loop
+    execute format('create policy staff_update on public.%I for update to authenticated using (true) with check (true)', t);
+  end loop;
+end $$;
+insert into menus(id,name) values (1,'ใหม่'),(2,'เคยสั่ง'),(3,'สูตรพื้นฐาน'),(4,'สูตรตัวเลือก'),(5,'อ้างตัวเลือกข้ามเมนู'),(6,'กดซ้ำ');
+insert into ingredients(id,name) values (1,'สูตร'),(2,'ตัวเลือก'),(3,'เคยใช้'),(4,'ว่าง'),(5,'สูตรเมนูใหม่'),(6,'สูตรตัวเลือกเมนูใหม่');
+insert into menu_option_groups(id,menu_id) values (1,1),(4,4),(5,5);
+insert into menu_options(id,menu_id,group_id,name) values (1,1,1,'ใหม่'),(4,4,4,'ไข่'),(5,5,5,'เก่า');
+insert into menu_ingredients values (3,1),(1,5);
+insert into menu_option_ingredients(menu_option_id,ingredient_id) values (4,2),(1,6);
+insert into order_items(id,menu_id) values (1,2);
+insert into order_item_options values (1,1,5,'ชื่อ ณ เวลาสั่ง');
+insert into order_ingredient_usages values (1,3,5);
+`;
+
+test("SQL migration, RLS, FK safeguards, atomic cascade and historical invariants", async (t) => {
+  const db = new PGlite();
+  try {
+    await db.exec(fixture);
+    await db.exec(readFileSync("supabase/migrations/20260909120000_safe_catalog_deletion.sql", "utf8"));
+    const snapshot = async () => (await db.query(`select jsonb_build_object(
+      'orders',(select jsonb_agg(t) from order_items t),
+      'options',(select jsonb_agg(t) from order_item_options t),
+      'usages',(select jsonb_agg(t) from order_ingredient_usages t),
+      'stock',(select jsonb_agg(jsonb_build_array(id,stock_quantity) order by id) from ingredients where id <> 4)) as value`)).rows[0].value;
+    const before = await snapshot();
+    await db.exec(`set role authenticated; set request.jwt.claim.sub = '00000000-0000-0000-0000-000000000001'; set request.jwt.claim.role = 'authenticated';`);
+    const call = async (kind, id, name, archive = false) => (await db.query(
+      "select public.delete_catalog_item_safely($1,$2,$3,$4) as result", [kind, id, name, archive],
+    )).rows[0].result;
+
+    await t.test("authenticated option editor can read/write recipes including identity IDs", async () => {
+      await db.exec(`begin;
+        insert into menu_options(id,menu_id,group_id,name) values (900,4,4,'ทดสอบสิทธิ์');
+        insert into menu_option_ingredients(menu_option_id,ingredient_id) values (900,2);
+        update menu_options set name='แก้ไขแล้ว' where id=900;
+      `);
+      assert.equal((await db.query("select name from menu_options where id=900")).rows[0].name, "แก้ไขแล้ว");
+      assert.equal((await db.query("delete from menu_option_ingredients where menu_option_id=900 returning id")).rows.length, 1);
+      await db.exec("rollback");
+    });
+
+    await t.test("new menu cascades through groups/options/recipes without deleting stock", async () => {
+      assert.equal((await call("menu", 1, "ใหม่")).status, "deleted");
+      for (const [table, column] of [["menu_option_groups","menu_id"],["menu_options","menu_id"],["menu_ingredients","menu_id"],["menu_option_ingredients","menu_option_id"]]) {
+        assert.equal((await db.query(`select count(*)::int n from ${table} where ${column}=1`)).rows[0].n, 0);
+      }
+    });
+    await t.test("used menu is refused and explicit archive preserves menu/history", async () => {
+      assert.equal((await call("menu", 2, "เคยสั่ง")).status, "used");
+      assert.equal((await call("menu", 2, "เคยสั่ง", true)).status, "archived");
+      assert.equal((await db.query("select is_available from menus where id=2")).rows[0].is_available, false);
+      assert.equal((await call("menu", 5, "อ้างตัวเลือกข้ามเมนู")).status, "used");
+    });
+    await t.test("both recipe types list the blocking menu/option", async () => {
+      assert.match((await call("ingredient", 1, "สูตร")).recipes[0], /สูตรพื้นฐาน/);
+      assert.match((await call("ingredient", 2, "ตัวเลือก")).recipes[0], /สูตรตัวเลือก.*ไข่/);
+    });
+    await t.test("usage blocks deletion; unused ingredient deletes", async () => {
+      assert.equal((await call("ingredient", 3, "เคยใช้")).status, "usage");
+      assert.equal((await call("ingredient", 4, "ว่าง")).status, "deleted");
+    });
+    await t.test("missing IDs and stale confirmation cannot mutate", async () => {
+      assert.equal((await call("menu", 999, "ไม่มี")).status, "not_found");
+      assert.equal((await call("menu", 2, "ชื่อปลอม", true)).status, "name_changed");
+      await assert.rejects(call("other", 1, "ใหม่"));
+    });
+    await t.test("duplicate requests have one winner (PGlite serializes sessions)", async () => {
+      const results = await Promise.all([call("menu", 6, "กดซ้ำ"), call("menu", 6, "กดซ้ำ")]);
+      assert.deepEqual(results.map((r) => r.status).sort(), ["deleted", "not_found"]);
+    });
+    await t.test("direct deletes cannot bypass FK protection or partly remove recipes", async () => {
+      for (const sql of ["delete from menus where id=2", "delete from menus where id=5", "delete from ingredients where id in (1,2,3)"]) {
+        await assert.rejects(db.exec(sql), (error) => ["23503", "23001"].includes(error.code));
+      }
+      assert.equal((await db.query("select count(*)::int n from menu_ingredients where ingredient_id=1")).rows[0].n, 1);
+    });
+    await t.test("order rows, option snapshots, usage history and retained stock are unchanged", async () => {
+      assert.deepEqual(await snapshot(), before);
+    });
+    await t.test("no login, anon RPC, anon DELETE and TRUNCATE are denied", async () => {
+      await db.exec("set request.jwt.claim.sub = ''");
+      await assert.rejects(call("menu", 2, "เคยสั่ง", true), (error) => error.code === "42501");
+      await assert.rejects(db.exec("truncate menus cascade"), (error) => error.code === "42501");
+      await db.exec("reset role; set role anon; set request.jwt.claim.role = 'anon'");
+      await assert.rejects(call("menu", 2, "เคยสั่ง"), (error) => error.code === "42501");
+      await assert.rejects(db.exec("delete from menus where id=2"), (error) => error.code === "42501");
+    });
+  } finally { await db.close(); }
+});

@@ -56,6 +56,11 @@ export default async function KitchenPage() {
         note,
         menus (
           name
+        ),
+        order_item_options (
+          id,
+          option_name,
+          quantity
         )
       )
     `)
@@ -177,6 +182,12 @@ export default async function KitchenPage() {
                               {menu?.name ?? "ไม่พบชื่อเมนู"} ×{" "}
                               {item.quantity}
                             </p>
+
+                            {item.order_item_options?.map((option) => (
+                              <p key={option.id} className="mt-1 text-sm text-orange-600">
+                                {option.option_name} × {option.quantity} ต่อจาน
+                              </p>
+                            ))}
 
                             {item.note && (
                               <p className="mt-1 text-sm text-orange-600">

@@ -1,4 +1,9 @@
 import { NextResponse } from "next/server";
+import {
+  type MenuOptionGroupRule,
+  type MenuOptionRule,
+  validateMenuOptionSelections,
+} from "@/lib/menu-option-groups";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 type OrderItemInput = {
@@ -28,17 +33,23 @@ type ValidatedOrderItem = {
   }>;
 };
 
-type MenuOptionData = {
-  id: number;
-  menu_id: number;
-  name: string;
-  additional_price: number;
-  is_available: boolean;
-};
-
 export async function POST(request: Request) {
   try {
-    const body = (await request.json()) as CreateOrderBody;
+    let body: CreateOrderBody;
+    try {
+      body = await request.json();
+    } catch {
+      return NextResponse.json(
+        { error: "ข้อมูลคำสั่งซื้อไม่ถูกต้อง" },
+        { status: 400 },
+      );
+    }
+    if (!body || typeof body !== "object" || Array.isArray(body)) {
+      return NextResponse.json(
+        { error: "ข้อมูลคำสั่งซื้อไม่ถูกต้อง" },
+        { status: 400 },
+      );
+    }
     const { tableId, sessionToken, items, note } = body;
 
     const numericTableId = Number(tableId);
@@ -74,6 +85,12 @@ export async function POST(request: Request) {
     const validatedItems: ValidatedOrderItem[] = [];
 
     for (const item of items) {
+      if (!item || typeof item !== "object" || Array.isArray(item)) {
+        return NextResponse.json(
+          { error: "ข้อมูลรายการอาหารไม่ถูกต้อง" },
+          { status: 400 },
+        );
+      }
       const menuId = Number(item.menuId);
       const quantity = Number(item.quantity);
 
@@ -89,9 +106,24 @@ export async function POST(request: Request) {
         );
       }
 
+      if (item.optionSelections !== undefined && !Array.isArray(item.optionSelections)) {
+        return NextResponse.json(
+          { error: "ข้อมูลตัวเลือกเสริมไม่ถูกต้อง" },
+          { status: 400 },
+        );
+      }
       const rawOptionSelections = Array.isArray(item.optionSelections)
         ? item.optionSelections
         : [];
+
+      if (rawOptionSelections.some((selection) =>
+        !selection || typeof selection !== "object" || Array.isArray(selection)
+      )) {
+        return NextResponse.json(
+          { error: "ข้อมูลตัวเลือกเสริมไม่ถูกต้อง" },
+          { status: 400 },
+        );
+      }
 
       const optionSelections = rawOptionSelections.map((selection) => ({
         optionId: Number(selection.optionId),
@@ -117,17 +149,10 @@ export async function POST(request: Request) {
       const hasDuplicateOption =
         new Set(optionSelections.map((selection) => selection.optionId)).size !==
         optionSelections.length;
-      const totalOptionQuantity = optionSelections.reduce(
-        (total, selection) => total + selection.quantity,
-        0,
-      );
 
-      if (hasDuplicateOption || totalOptionQuantity > 3) {
+      if (hasDuplicateOption) {
         return NextResponse.json(
-          {
-            error:
-              "ตัวเลือกเสริมซ้ำกันหรือมีจำนวนรวมเกิน 3 รายการต่อจาน",
-          },
+          { error: "ไม่สามารถส่งตัวเลือกเดิมซ้ำกันได้" },
           { status: 400 },
         );
       }
@@ -159,11 +184,9 @@ export async function POST(request: Request) {
       .maybeSingle();
 
     if (tableError) {
+      console.error("ตรวจสอบข้อมูลโต๊ะไม่สำเร็จ", tableError);
       return NextResponse.json(
-        {
-          error: "ตรวจสอบข้อมูลโต๊ะไม่สำเร็จ",
-          details: tableError.message,
-        },
+        { error: "ตรวจสอบข้อมูลโต๊ะไม่สำเร็จ กรุณาลองใหม่" },
         { status: 500 },
       );
     }
@@ -182,8 +205,9 @@ export async function POST(request: Request) {
       .maybeSingle();
 
     if (sessionReadError) {
+      console.error("ตรวจสอบรอบโต๊ะไม่สำเร็จ", sessionReadError);
       return NextResponse.json(
-        { error: "ตรวจสอบรอบโต๊ะไม่สำเร็จ", details: sessionReadError.message },
+        { error: "ตรวจสอบรอบโต๊ะไม่สำเร็จ กรุณาลองใหม่" },
         { status: 500 },
       );
     }
@@ -197,32 +221,6 @@ export async function POST(request: Request) {
         { error: "รอบโต๊ะนี้หมดอายุแล้ว กรุณาเริ่มรอบใหม่" },
         { status: 409 },
       );
-    }
-
-    let sessionId = existingSession?.id;
-
-    if (!sessionId) {
-      const { data: createdSession, error: sessionCreateError } = await supabase
-        .from("dining_sessions")
-        .insert({
-          table_id: numericTableId,
-          access_token: sessionToken,
-          status: "active",
-        })
-        .select("id")
-        .single();
-
-      if (sessionCreateError || !createdSession) {
-        return NextResponse.json(
-          {
-            error: "เริ่มรอบโต๊ะไม่สำเร็จ",
-            details: sessionCreateError?.message,
-          },
-          { status: 500 },
-        );
-      }
-
-      sessionId = createdSession.id;
     }
 
     /*
@@ -241,11 +239,9 @@ export async function POST(request: Request) {
       .in("id", menuIds);
 
     if (menusError) {
+      console.error("ตรวจสอบข้อมูลเมนูไม่สำเร็จ", menusError);
       return NextResponse.json(
-        {
-          error: "ตรวจสอบข้อมูลเมนูไม่สำเร็จ",
-          details: menusError.message,
-        },
+        { error: "ตรวจสอบข้อมูลเมนูไม่สำเร็จ กรุณาลองใหม่" },
         { status: 500 },
       );
     }
@@ -269,9 +265,7 @@ export async function POST(request: Request) {
       );
     }
 
-    /*
-     * โหลดตัวเลือกทั้งหมดที่ลูกค้าส่งมา
-     */
+    /* โหลดกฎและตัวเลือกทั้งหมดของเมนูจากฐานข้อมูล ไม่เชื่อ ownership จาก client */
     const allOptionIds = Array.from(
       new Set(
         validatedItems.flatMap((item) =>
@@ -280,74 +274,68 @@ export async function POST(request: Request) {
       ),
     );
 
-    let menuOptions: MenuOptionData[] = [];
-
-    if (allOptionIds.length > 0) {
-      const { data: optionRows, error: optionsError } = await supabase
+    const [groupsResult, optionsResult] = await Promise.all([
+      supabase
+        .from("menu_option_groups")
+        .select(
+          "id, menu_id, name, selection_type, is_required, min_select, max_select, max_total_quantity, is_active",
+        )
+        .in("menu_id", menuIds),
+      supabase
         .from("menu_options")
-        .select("id, menu_id, name, additional_price, is_available")
-        .in("id", allOptionIds);
+        .select(
+          "id, menu_id, group_id, name, additional_price, is_available, max_quantity",
+        )
+        .in("menu_id", menuIds),
+    ]);
 
-      if (optionsError) {
-        return NextResponse.json(
-          {
-            error: "ตรวจสอบตัวเลือกเสริมไม่สำเร็จ",
-            details: optionsError.message,
-          },
-          { status: 500 },
-        );
-      }
-
-      if (!optionRows || optionRows.length !== allOptionIds.length) {
-        return NextResponse.json(
-          {
-            error: "มีตัวเลือกเสริมบางรายการที่ไม่มีอยู่ในระบบ",
-          },
-          { status: 400 },
-        );
-      }
-
-      menuOptions = optionRows.map((option) => ({
-        id: Number(option.id),
-        menu_id: Number(option.menu_id),
-        name: String(option.name),
-        additional_price: Number(option.additional_price),
-        is_available: Boolean(option.is_available),
-      }));
-
-      const unavailableOptions = menuOptions.filter(
-        (option) => !option.is_available,
+    if (groupsResult.error || optionsResult.error) {
+      console.error("ตรวจสอบ menu option groups ไม่สำเร็จ", {
+        groupsError: groupsResult.error,
+        optionsError: optionsResult.error,
+      });
+      return NextResponse.json(
+        { error: "ตรวจสอบตัวเลือกของเมนูไม่สำเร็จ กรุณาลองใหม่" },
+        { status: 500 },
       );
+    }
 
-      if (unavailableOptions.length > 0) {
-        return NextResponse.json(
-          {
-            error: "มีตัวเลือกเสริมที่ปิดขายแล้ว",
-            details: unavailableOptions.map((option) => option.name).join(", "),
-          },
-          { status: 409 },
-        );
-      }
+    const menuOptionGroups: MenuOptionGroupRule[] = (groupsResult.data ?? []).map(
+      (group) => ({
+        id: Number(group.id),
+        menuId: Number(group.menu_id),
+        name: String(group.name),
+        selectionType:
+          group.selection_type === "single" ? "single" : "multiple",
+        isRequired: Boolean(group.is_required),
+        minSelect: Number(group.min_select),
+        maxSelect: Number(group.max_select),
+        maxTotalQuantity: Number(group.max_total_quantity),
+        isActive: Boolean(group.is_active),
+      }),
+    );
+    const menuOptions: MenuOptionRule[] = (optionsResult.data ?? []).map(
+      (option) => ({
+        id: Number(option.id),
+        menuId: Number(option.menu_id),
+        groupId: option.group_id === null ? null : Number(option.group_id),
+        name: String(option.name),
+        additionalPrice: Number(option.additional_price),
+        isAvailable: Boolean(option.is_available),
+        maxQuantity: Number(option.max_quantity ?? 3),
+      }),
+    );
 
-      /*
-       * ตรวจสอบว่าตัวเลือกเป็นของเมนูที่ลูกค้าสั่งจริง
-       * เช่น ไม่อนุญาตให้นำ option ของข้าวกะเพราไปใส่น้ำเปล่า
-       */
-      for (const item of validatedItems) {
-        const invalidOptionForMenu = item.optionSelections
-          .map((selection) =>
-            menuOptions.find((option) => option.id === selection.optionId),
-          )
-          .find((option) => !option || option.menu_id !== item.menuId);
+    for (const item of validatedItems) {
+      const validation = validateMenuOptionSelections({
+        menuId: item.menuId,
+        selections: item.optionSelections,
+        groups: menuOptionGroups,
+        options: menuOptions,
+      });
 
-        if (invalidOptionForMenu !== undefined) {
-          return NextResponse.json(
-            {
-              error: "ตัวเลือกเสริมไม่ตรงกับเมนูที่เลือก",
-            },
-            { status: 400 },
-          );
-        }
+      if (!validation.ok) {
+        return NextResponse.json({ error: validation.message }, { status: 400 });
       }
     }
 
@@ -372,11 +360,9 @@ export async function POST(request: Request) {
       .in("menu_id", menuIds);
 
     if (recipeError) {
+      console.error("ตรวจสอบสูตรวัตถุดิบไม่สำเร็จ", recipeError);
       return NextResponse.json(
-        {
-          error: "ตรวจสอบสูตรวัตถุดิบไม่สำเร็จ",
-          details: recipeError.message,
-        },
+        { error: "ตรวจสอบสูตรวัตถุดิบไม่สำเร็จ กรุณาลองใหม่" },
         { status: 500 },
       );
     }
@@ -414,11 +400,9 @@ export async function POST(request: Request) {
           .in("menu_option_id", allOptionIds);
 
       if (optionIngredientsError) {
+        console.error("ตรวจสอบสูตรวัตถุดิบของตัวเลือกไม่สำเร็จ", optionIngredientsError);
         return NextResponse.json(
-          {
-            error: "ตรวจสอบสูตรวัตถุดิบของตัวเลือกเสริมไม่สำเร็จ",
-            details: optionIngredientsError.message,
-          },
+          { error: "ตรวจสอบสูตรวัตถุดิบของตัวเลือกไม่สำเร็จ กรุณาลองใหม่" },
           { status: 500 },
         );
       }
@@ -464,11 +448,9 @@ export async function POST(request: Request) {
         .in("id", ingredientIds);
 
       if (ingredientsError) {
+        console.error("ตรวจสอบสต็อกวัตถุดิบไม่สำเร็จ", ingredientsError);
         return NextResponse.json(
-          {
-            error: "ตรวจสอบสต็อกวัตถุดิบไม่สำเร็จ",
-            details: ingredientsError.message,
-          },
+          { error: "ตรวจสอบสต็อกวัตถุดิบไม่สำเร็จ กรุณาลองใหม่" },
           { status: 500 },
         );
       }
@@ -548,7 +530,7 @@ export async function POST(request: Request) {
         const option = menuOptions.find(
           (currentOption) =>
             currentOption.id === selection.optionId &&
-            currentOption.menu_id === item.menuId,
+            currentOption.menuId === item.menuId,
         );
 
         if (!option) {
@@ -565,7 +547,7 @@ export async function POST(request: Request) {
 
       const additionalPrice = selectedOptions.reduce(
         (total, option) =>
-          total + option.additional_price * option.quantity,
+          total + option.additionalPrice * option.quantity,
         0,
       );
 
@@ -593,197 +575,70 @@ export async function POST(request: Request) {
 
     const orderNote = typeof note === "string" ? note.trim().slice(0, 500) : "";
 
-    /*
-     * สร้างออเดอร์
-     */
-    const { data: order, error: orderError } = await supabase
-      .from("orders")
-      .insert({
-        table_id: numericTableId,
-        session_id: sessionId,
-        status: "confirmed",
-        total_amount: totalAmount,
-        note: orderNote || null,
-        stock_deducted: false,
-      })
-      .select(
-        "id, order_number, table_id, session_id, status, total_amount, stock_deducted",
-      )
-      .single();
-
-    if (orderError) {
-      return NextResponse.json(
-        {
-          error: "สร้างออเดอร์ไม่สำเร็จ",
-          details: orderError.message,
-        },
-        { status: 500 },
-      );
-    }
-
-    /*
-     * ฟังก์ชันล้างออเดอร์เมื่อบันทึกส่วนใดส่วนหนึ่งไม่สำเร็จ
-     * order_items และ order_item_options จะถูกลบตาม
-     * foreign key on delete cascade
-     */
-    const cleanupOrder = async () => {
-      return supabase.from("orders").delete().eq("id", order.id);
-    };
-
-    /*
-     * บันทึกรายการอาหารทีละรายการ
-     * เพื่อให้ได้ order_item.id สำหรับผูกตัวเลือก
-     */
-    for (const item of orderItems) {
-      const { data: createdOrderItem, error: orderItemError } = await supabase
-        .from("order_items")
-        .insert({
-          order_id: order.id,
-          menu_id: item.menu_id,
-          quantity: item.quantity,
-          unit_price: item.unit_price,
-          subtotal: item.subtotal,
-          note: item.note,
-        })
-        .select("id")
-        .single();
-
-      if (orderItemError || !createdOrderItem) {
-        const { error: cleanupError } = await cleanupOrder();
-
-        return NextResponse.json(
-          {
-            error: "บันทึกรายการอาหารไม่สำเร็จ",
-            details: orderItemError?.message ?? "ไม่พบ ID ของรายการอาหาร",
-            cleanupError: cleanupError?.message,
-          },
-          { status: 500 },
-        );
-      }
-
-      /*
-       * บันทึกสำเนาชื่อและราคาตัวเลือก ณ เวลาสั่ง
-       */
-      if (item.selectedOptions.length > 0) {
-        const optionsForInsert = item.selectedOptions.map((option) => ({
-          order_item_id: createdOrderItem.id,
-          menu_option_id: option.id,
-          option_name: option.name,
-          additional_price: option.additional_price,
-          quantity: option.quantity,
-        }));
-
-        const { error: itemOptionsError } = await supabase
-          .from("order_item_options")
-          .insert(optionsForInsert);
-
-        if (itemOptionsError) {
-          const { error: cleanupError } = await cleanupOrder();
-
-          return NextResponse.json(
-            {
-              error: "บันทึกตัวเลือกเสริมไม่สำเร็จ",
-              details: itemOptionsError.message,
-              cleanupError: cleanupError?.message,
-            },
-            { status: 500 },
-          );
-        }
-      }
-    }
-
-    /*
-     * บันทึกออเดอร์และตัวเลือกครบแล้ว จึงส่งรายการวัตถุดิบให้ RPC
-     * ฟังก์ชันจะหักสต็อก บันทึกประวัติการใช้ และตั้ง stock_deducted=true
-     * ภายใน transaction เดียว เพื่อให้ทุกขั้นสำเร็จหรือย้อนกลับพร้อมกัน
-     */
     const requiredItems = Array.from(requiredIngredientMap.entries()).map(
       ([ingredientId, quantity]) => ({
         ingredient_id: ingredientId,
         quantity,
       }),
     );
+    const itemsForTransaction = orderItems.map((item) => ({
+      menu_id: item.menu_id,
+      quantity: item.quantity,
+      unit_price: item.unit_price,
+      subtotal: item.subtotal,
+      note: item.note,
+      options: item.selectedOptions.map((option) => ({
+        menu_option_id: option.id,
+        option_name: option.name,
+        additional_price: option.additionalPrice,
+        quantity: option.quantity,
+      })),
+    }));
 
-    if (requiredItems.length > 0) {
-      const { error: processStockError } = await supabase.rpc(
-        "process_order_stock",
-        {
-          p_order_id: order.id,
-          required_items: requiredItems,
-        },
-      );
-
-      if (processStockError) {
-        const { error: cleanupError } = await cleanupOrder();
-
-        const isInsufficientStock =
-          processStockError.message.includes("ไม่เพียงพอ");
-
-        return NextResponse.json(
-          {
-            error: isInsufficientStock
-              ? "วัตถุดิบไม่เพียงพอ"
-              : "หักสต็อกวัตถุดิบไม่สำเร็จ",
-            details: processStockError.message,
-            cleanupError: cleanupError?.message,
-          },
-          { status: isInsufficientStock ? 409 : 500 },
-        );
-      }
-    } else {
-      const { error: updateWithoutStockError } = await supabase
-        .from("orders")
-        .update({ stock_deducted: true })
-        .eq("id", order.id);
-
-      if (updateWithoutStockError) {
-        const { error: cleanupError } = await cleanupOrder();
-
-        return NextResponse.json(
-          {
-            error: "บันทึกสถานะออเดอร์ไม่สำเร็จ",
-            details: updateWithoutStockError.message,
-            cleanupError: cleanupError?.message,
-          },
-          { status: 500 },
-        );
-      }
-    }
-
-    const { data: updatedOrder, error: readOrderError } = await supabase
-      .from("orders")
-      .select(
-        "id, order_number, table_id, session_id, status, total_amount, stock_deducted",
-      )
-      .eq("id", order.id)
+    const { data: createdOrder, error: createOrderError } = await supabase
+      .rpc("create_order_with_stock", {
+        p_table_id: numericTableId,
+        p_session_token: sessionToken,
+        p_order_note: orderNote || null,
+        p_total_amount: totalAmount,
+        p_items: itemsForTransaction,
+        p_required_items: requiredItems,
+      })
       .single();
 
-    if (readOrderError || !updatedOrder) {
+    if (createOrderError || !createdOrder) {
+      console.error("create_order_with_stock ไม่สำเร็จ", {
+        code: createOrderError?.code,
+        message: createOrderError?.message,
+        details: createOrderError?.details,
+        hint: createOrderError?.hint,
+      });
+
+      const isInsufficientStock =
+        createOrderError?.code === "P0001" &&
+        createOrderError.message.includes("INSUFFICIENT_STOCK");
+
       return NextResponse.json(
         {
-          error:
-            "สร้างออเดอร์แล้ว แต่โหลดข้อมูลออเดอร์ไม่สำเร็จ กรุณาแจ้งพนักงาน",
-          details: readOrderError?.message ?? "ไม่พบข้อมูลออเดอร์หลังอัปเดต",
-          orderId: order.id,
+          error: isInsufficientStock
+            ? "วัตถุดิบไม่เพียงพอ"
+            : "สร้างออเดอร์ไม่สำเร็จ กรุณาลองใหม่",
         },
-        { status: 500 },
+        { status: isInsufficientStock ? 409 : 500 },
       );
     }
 
     return NextResponse.json(
       {
         message: "สั่งอาหารสำเร็จ",
-        order: updatedOrder,
+        order: createdOrder,
       },
       { status: 201 },
     );
   } catch (error) {
+    console.error("Orders API unexpected error", error);
     return NextResponse.json(
-      {
-        error: "เกิดข้อผิดพลาดในระบบ",
-        details:
-          error instanceof Error ? error.message : "Unknown server error",
-      },
+      { error: "เกิดข้อผิดพลาดในระบบ กรุณาลองใหม่" },
       { status: 500 },
     );
   }

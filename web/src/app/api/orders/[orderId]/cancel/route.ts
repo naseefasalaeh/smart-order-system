@@ -52,20 +52,25 @@ export async function POST(request: Request, context: RouteContext) {
     );
 
     if (error) {
-      const status = error.message.includes("สถานะออเดอร์ถูกเปลี่ยนไปแล้ว")
-        ? 409
-        : 400;
+      console.error("cancel_order_and_restore_stock ไม่สำเร็จ", {
+        code: error.code,
+        message: error.message,
+        details: error.details,
+        hint: error.hint,
+      });
 
-      return NextResponse.json({ error: error.message }, { status });
+      return NextResponse.json(
+        { error: "ไม่สามารถยกเลิกออเดอร์ได้ กรุณาโหลดหน้าแล้วลองใหม่" },
+        { status: 409 },
+      );
     }
 
     return NextResponse.json({ success: true });
   } catch (error) {
-    const message =
-      error instanceof Error ? error.message : "เกิดข้อผิดพลาดที่ไม่ทราบสาเหตุ";
+    console.error("Cancel order API unexpected error", error);
 
     return NextResponse.json(
-      { error: "ไม่สามารถยกเลิกออเดอร์ได้", details: message },
+      { error: "ไม่สามารถยกเลิกออเดอร์ได้ กรุณาลองใหม่" },
       { status: 500 },
     );
   }

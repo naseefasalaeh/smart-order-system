@@ -7,12 +7,21 @@ type EditIngredientPageProps = {
   params: Promise<{
     id: string;
   }>;
+  searchParams: Promise<{ error?: string }>;
 };
+
+function editIngredientErrorRedirect(id: string, message: string): never {
+  redirect(
+    `/dashboard/ingredients/${encodeURIComponent(id)}/edit?error=${encodeURIComponent(message)}`,
+  );
+}
 
 export default async function EditIngredientPage({
   params,
+  searchParams,
 }: EditIngredientPageProps) {
   const { id } = await params;
+  const { error: errorMessage } = await searchParams;
   const supabase = await createClient();
 
   const {
@@ -23,35 +32,86 @@ export default async function EditIngredientPage({
     redirect("/login");
   }
 
-  const { data: ingredient, error } = await supabase
-    .from("ingredients")
-    .select("id, name, unit, stock_quantity, minimum_stock")
-    .eq("id", id)
-    .single();
+  const [ingredientResult, categoriesResult] = await Promise.all([
+    supabase
+      .from("ingredients")
+      .select("id, name, unit, stock_quantity, minimum_stock, category_id")
+      .eq("id", id)
+      .single(),
+    supabase
+      .from("ingredient_categories")
+      .select("id, name, display_order, is_active")
+      .order("display_order", { ascending: true })
+      .order("name", { ascending: true }),
+  ]);
+
+  const { data: ingredient, error } = ingredientResult;
 
   if (error || !ingredient) {
     notFound();
   }
+
+  const currentCategoryId = ingredient.category_id
+    ? Number(ingredient.category_id)
+    : null;
 
   async function updateIngredient(formData: FormData) {
     "use server";
 
     const supabase = await createClient();
 
+    const {
+      data: { user: actionUser },
+    } = await supabase.auth.getUser();
+
+    if (!actionUser) redirect("/login");
+
     const name = String(formData.get("name") ?? "").trim();
     const unit = String(formData.get("unit") ?? "").trim();
     const stockQuantity = Number(formData.get("stock_quantity"));
     const minimumStock = Number(formData.get("minimum_stock"));
+    const rawCategoryId = String(formData.get("category_id") ?? "").trim();
+    const categoryId = rawCategoryId ? Number(rawCategoryId) : null;
 
     if (
       !name ||
       !unit ||
       Number.isNaN(stockQuantity) ||
       Number.isNaN(minimumStock) ||
+      (categoryId !== null &&
+        (!Number.isInteger(categoryId) || categoryId <= 0)) ||
       stockQuantity < 0 ||
       minimumStock < 0
     ) {
-      return;
+      editIngredientErrorRedirect(
+        id,
+        "ข้อมูลวัตถุดิบไม่ถูกต้อง กรุณาตรวจสอบอีกครั้ง",
+      );
+    }
+
+    if (categoryId !== null) {
+      const { data: selectedCategory, error: categoryError } = await supabase
+        .from("ingredient_categories")
+        .select("id, is_active")
+        .eq("id", categoryId)
+        .maybeSingle();
+
+      if (categoryError || !selectedCategory) {
+        if (categoryError) {
+          console.error("Failed to validate ingredient category", categoryError);
+        }
+        editIngredientErrorRedirect(
+          id,
+          "ไม่พบหมวดหมู่ที่เลือก กรุณาเลือกใหม่",
+        );
+      }
+
+      if (!selectedCategory.is_active && currentCategoryId !== categoryId) {
+        editIngredientErrorRedirect(
+          id,
+          "หมวดหมู่ที่เลือกปิดใช้งานแล้ว กรุณาเลือกหมวดอื่น",
+        );
+      }
     }
 
     const { error: updateError } = await supabase
@@ -61,13 +121,20 @@ export default async function EditIngredientPage({
         unit,
         stock_quantity: stockQuantity,
         minimum_stock: minimumStock,
+        category_id: categoryId,
         updated_at: new Date().toISOString(),
       })
       .eq("id", id);
 
     if (updateError) {
-      throw new Error(
-        `ไม่สามารถแก้ไขวัตถุดิบได้: ${updateError.message}`
+      if (updateError.code !== "23505") {
+        console.error("Failed to update ingredient", updateError);
+      }
+      editIngredientErrorRedirect(
+        id,
+        updateError.code === "23505"
+          ? "มีชื่อวัตถุดิบนี้อยู่แล้ว"
+          : "บันทึกวัตถุดิบไม่สำเร็จ กรุณาลองใหม่",
       );
     }
 
@@ -99,7 +166,18 @@ export default async function EditIngredientPage({
             แก้ไขข้อมูลและจำนวนคงเหลือของวัตถุดิบ
           </p>
 
+          {errorMessage && (
+            <div className="mt-6 rounded-xl bg-red-50 p-4 text-red-700">
+              {errorMessage}
+            </div>
+          )}
+
           <form action={updateIngredient} className="mt-8 space-y-5">
+            {categoriesResult.error && (
+              <div className="rounded-xl bg-red-50 p-4 text-red-700">
+                โหลดหมวดหมู่ไม่สำเร็จ กรุณากลับไปลองใหม่
+              </div>
+            )}
             <div>
               <label
                 htmlFor="name"
@@ -141,6 +219,39 @@ export default async function EditIngredientPage({
                 <option value="ฟอง">ฟอง</option>
                 <option value="ถุง">ถุง</option>
                 <option value="ขวด">ขวด</option>
+              </select>
+            </div>
+
+            <div>
+              <label
+                htmlFor="category_id"
+                className="mb-2 block font-semibold text-zinc-700"
+              >
+                หมวดหมู่วัตถุดิบ
+              </label>
+              <select
+                id="category_id"
+                name="category_id"
+                defaultValue={
+                  currentCategoryId ? String(currentCategoryId) : ""
+                }
+                className="w-full rounded-xl border border-zinc-300 bg-white px-4 py-3 text-zinc-900 outline-none focus:border-orange-500 focus:ring-2 focus:ring-orange-100"
+              >
+                <option value="">
+                  ยังไม่มีหมวด
+                </option>
+                {(categoriesResult.data ?? [])
+                  .filter(
+                    (category) =>
+                      category.is_active ||
+                      Number(category.id) === currentCategoryId,
+                  )
+                  .map((category) => (
+                    <option key={category.id} value={category.id}>
+                      {category.name}
+                      {category.is_active ? "" : " (ปิดใช้งาน)"}
+                    </option>
+                  ))}
               </select>
             </div>
 
