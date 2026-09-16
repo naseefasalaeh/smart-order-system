@@ -7,6 +7,7 @@ import { createClient } from "@/lib/supabase/client";
 type OrderRealtimeRefreshProps = {
   channelName: string;
   fallbackIntervalMs?: number;
+  pollWhenSubscribed?: boolean;
 };
 
 const refreshDebounceMs = 300;
@@ -14,6 +15,7 @@ const refreshDebounceMs = 300;
 export default function OrderRealtimeRefresh({
   channelName,
   fallbackIntervalMs = 15_000,
+  pollWhenSubscribed = false,
 }: OrderRealtimeRefreshProps) {
   const router = useRouter();
 
@@ -56,10 +58,11 @@ export default function OrderRealtimeRefresh({
     };
 
     window.addEventListener("online", handleOnline);
+    window.addEventListener("focus", handleOnline);
     document.addEventListener("visibilitychange", handleVisibilityChange);
 
-    // Poll while the initial WebSocket connection is being established. Once
-    // Realtime is subscribed, polling is stopped and only resumes on failure.
+    // Stock views keep polling as a backstop even when a subscribed socket
+    // misses an event. Other order views retain failure-only polling.
     startFallbackPolling();
 
     const channel = supabase
@@ -77,7 +80,7 @@ export default function OrderRealtimeRefresh({
         if (!isActive) return;
 
         if (status === "SUBSCRIBED") {
-          stopFallbackPolling();
+          if (!pollWhenSubscribed) stopFallbackPolling();
           refreshOrders();
           return;
         }
@@ -104,13 +107,14 @@ export default function OrderRealtimeRefresh({
 
       stopFallbackPolling();
       window.removeEventListener("online", handleOnline);
+      window.removeEventListener("focus", handleOnline);
       document.removeEventListener(
         "visibilitychange",
         handleVisibilityChange,
       );
       void supabase.removeChannel(channel);
     };
-  }, [channelName, fallbackIntervalMs, router]);
+  }, [channelName, fallbackIntervalMs, pollWhenSubscribed, router]);
 
   return null;
 }

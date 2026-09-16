@@ -24,6 +24,7 @@ export type CustomerMenuOptionGroup = {
 };
 
 export type CustomerMenu = {
+  category_name: string;
   id: number;
   name: string;
   description: string | null;
@@ -35,17 +36,19 @@ export type CustomerMenu = {
 
 export async function loadCustomerMenuCatalog(): Promise<CustomerMenu[]> {
   const db = createAdminClient();
-  const [menusResult, availabilityResult] = await Promise.all([
+  const [menusResult, availabilityResult, categoriesResult] = await Promise.all([
     db
       .from("menus")
-      .select("id, name, description, price, image_url, created_at")
+      .select("id, name, category_id, description, price, image_url, created_at")
       .eq("is_available", true)
       .order("created_at", { ascending: false }),
     db.from("menu_stock_availability").select("menu_id, can_order"),
+    db.from("categories").select("id,name"),
   ]);
 
   if (menusResult.error) throw menusResult.error;
   if (availabilityResult.error) throw availabilityResult.error;
+  if (categoriesResult.error) throw categoriesResult.error;
 
   const menus = menusResult.data ?? [];
   const menuIds = menus.map((menu) => Number(menu.id));
@@ -62,7 +65,7 @@ export async function loadCustomerMenuCatalog(): Promise<CustomerMenu[]> {
       .order("display_order", { ascending: true })
       .order("id", { ascending: true }),
     db
-      .from("menu_options")
+      .from("effective_menu_options")
       .select(
         "id, menu_id, group_id, name, additional_price, is_available, sort_order, max_quantity",
       )
@@ -88,7 +91,7 @@ export async function loadCustomerMenuCatalog(): Promise<CustomerMenu[]> {
 
   if (activeOptionIds.length > 0) {
     const recipesResult = await db
-      .from("menu_option_ingredients")
+      .from("effective_menu_option_ingredients")
       .select("menu_option_id, ingredient_id, quantity_required")
       .in("menu_option_id", activeOptionIds);
 
@@ -222,6 +225,7 @@ export async function loadCustomerMenuCatalog(): Promise<CustomerMenu[]> {
     );
 
     return {
+      category_name: categoriesResult.data?.find((c) => c.id === menu.category_id)?.name ?? "อื่น ๆ",
       id: menuId,
       name: String(menu.name),
       description: menu.description ? String(menu.description) : null,

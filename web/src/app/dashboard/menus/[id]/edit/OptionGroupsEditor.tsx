@@ -6,6 +6,7 @@ import {
 } from "./actions";
 
 type Group = {
+  kind: "standard" | "meat";
   id: number;
   name: string;
   selection_type: "single" | "multiple";
@@ -40,6 +41,8 @@ function GroupFields({ group }: { group?: Group }) {
       {group && <input type="hidden" name="group_id" value={group.id} />}
       <div className="grid gap-3 md:grid-cols-2">
         <label className="text-sm font-semibold text-zinc-700">
+          หมวดตัวเลือก
+          <select name="kind" defaultValue={group?.kind ?? "standard"} className="mt-1 mb-3 w-full rounded-lg border border-zinc-300 p-2"><option value="standard">ตัวเลือกอื่นของเมนู</option></select>
           ชื่อกลุ่ม
           <input name="name" required defaultValue={group?.name} className="mt-1 w-full rounded-lg border border-zinc-300 px-3 py-2" />
         </label>

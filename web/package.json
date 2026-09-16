@@ -7,7 +7,12 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "test:catalog-deletion": "node --test tests/catalog-deletion.test.mjs"
+    "test:catalog-deletion": "node --test tests/catalog-deletion.test.mjs",
+    "test:catalog-redesign": "node --test tests/catalog-redesign.test.mjs",
+    "test:addon-categories": "node --test tests/addon-categories.test.mjs tests/addon-seafood-migration.test.mjs",
+    "test:browser-addon-categories": "node tests/browser-addon-categories.mjs",
+    "test:order-stock": "node --test tests/order-stock-guards.test.mjs",
+    "test:hard-delete": "node --test tests/hard-delete.test.mjs"
   },
   "dependencies": {
     "@supabase/ssr": "^0.12.4",

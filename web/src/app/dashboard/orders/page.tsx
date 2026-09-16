@@ -12,6 +12,7 @@ const menuItems = [
   { name: "เมนูอาหาร", href: "/dashboard/menus" },
   { name: "วัตถุดิบ", href: "/dashboard/ingredients" },
   { name: "โต๊ะและ QR Code", href: "/dashboard/tables" },
+  { name: "ตัวเลือกเสริม", href: "/dashboard/addons" },
   { name: "รายงาน", href: "/dashboard/reports" },
 ];
 
@@ -77,6 +78,7 @@ export default async function OrdersPage({ searchParams }: OrdersPageProps) {
   let ordersQuery = supabase.from("orders").select(`
     id,
     order_number,
+    dining_type,
     status,
     total_amount,
     note,
@@ -90,6 +92,7 @@ export default async function OrdersPage({ searchParams }: OrdersPageProps) {
       unit_price,
       subtotal,
       note,
+      menu_name_snapshot,
       menus (
         name
       ),
@@ -247,7 +250,7 @@ export default async function OrdersPage({ searchParams }: OrdersPageProps) {
                         </p>
 
                         <h3 className="mt-1 text-xl font-bold text-zinc-900">
-                          โต๊ะ {table?.table_number ?? "-"}
+                          {order.dining_type === "takeaway" ? "กลับบ้าน (Takeaway)" : `ทานที่ร้าน · โต๊ะ ${table?.table_number ?? "-"}`}
                         </h3>
 
                         <p className="mt-1 text-sm text-zinc-400">
@@ -280,7 +283,7 @@ export default async function OrdersPage({ searchParams }: OrdersPageProps) {
                               >
                                 <div>
                                   <p className="font-medium text-zinc-800">
-                                    {menu?.name ?? "ไม่พบชื่อเมนู"} ×{" "}
+                                    {item.menu_name_snapshot ?? menu?.name ?? "ไม่พบชื่อเมนู"} ×{" "}
                                     {item.quantity}
                                   </p>
 

@@ -18,7 +18,7 @@ export default function CatalogDeleteButton({ id, name, kind }: {
   const [notice, setNotice] = useState("");
   const label = kind === "menu" ? "เมนู" : "วัตถุดิบ";
 
-  async function submit(mode: "delete" | "archive") {
+  async function submit() {
     if (busy.current || confirmation !== name) return;
     busy.current = true;
     setPending(true);
@@ -26,11 +26,11 @@ export default function CatalogDeleteButton({ id, name, kind }: {
       const data = new FormData();
       data.set("id", String(id));
       data.set("kind", kind);
-      data.set("mode", mode);
+      data.set("mode", "delete");
       data.set("confirmation", confirmation);
       const response = await deleteCatalogItem(data);
       setResult(response);
-      if (response.status === "deleted" || response.status === "archived") {
+      if (response.status === "deleted") {
         setNotice(response.message);
         dialog.current?.close();
         router.replace(`/dashboard/${kind === "menu" ? "menus" : "ingredients"}?success=${encodeURIComponent(response.message)}`);
@@ -56,10 +56,10 @@ export default function CatalogDeleteButton({ id, name, kind }: {
         <h2 id={titleId} className="text-xl font-bold">ยืนยันลบ{label} “{name}”</h2>
         <p className="mt-3 text-sm text-zinc-600">
           {kind === "menu"
-            ? "เมนูที่ไม่เคยมีออเดอร์จะถูกลบถาวรพร้อมสูตร กลุ่ม และตัวเลือก หากมีประวัติจะลบไม่ได้ แต่สามารถยืนยันปิดขายแทนได้"
-            : "ลบถาวรได้เฉพาะวัตถุดิบที่ไม่อยู่ในสูตรและไม่มีประวัติการหัก/คืน stock การลบไม่สามารถย้อนกลับได้"}
+            ? "ลบเมนูจริงพร้อมสูตร กลุ่ม ตัวเลือก และลิงก์ Add-on โดยเก็บชื่อ ราคา และตัวเลือกในประวัติออเดอร์ไว้ การลบไม่สามารถย้อนกลับจากหน้านี้ได้"
+            : "ลบวัตถุดิบจริงและนำออกจากทุกสูตร เก็บประวัติการใช้ไว้ เมนู/ตัวเลือกที่สูตรขาดจะปิดขายจนตรวจสูตรใหม่ ต้องปิดหรือยกเลิกออเดอร์ที่หักสต็อกก่อนลบ"}
         </p>
-        <form onSubmit={(event) => { event.preventDefault(); void submit(result?.status === "used" ? "archive" : "delete"); }}>
+        <form onSubmit={(event) => { event.preventDefault(); void submit(); }}>
           <label className="mt-5 block text-sm font-semibold">
             พิมพ์ชื่อ “{name}” เพื่อยืนยัน
             <input value={confirmation} onChange={(event) => setConfirmation(event.target.value)} disabled={pending}
@@ -71,7 +71,7 @@ export default function CatalogDeleteButton({ id, name, kind }: {
               className="rounded-lg border px-4 py-2 disabled:opacity-50">ยกเลิก</button>
             <button type="submit" disabled={pending || confirmation !== name}
               className="rounded-lg bg-red-600 px-4 py-2 font-semibold text-white disabled:opacity-50">
-              {pending ? "กำลังตรวจสอบ..." : result?.status === "used" ? "ยืนยันปิดขายแทน" : "ยืนยันลบถาวร"}
+              {pending ? "กำลังตรวจสอบ..." : "ยืนยันลบถาวร"}
             </button>
           </div>
         </form>

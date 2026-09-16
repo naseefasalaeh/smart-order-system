@@ -11,6 +11,8 @@ type OrderOption = {
 };
 
 type OrderItem = {
+  menu_name_snapshot: string;
+  menu_price_snapshot: number;
   id: number;
   quantity: number;
   unit_price: number;
@@ -21,6 +23,7 @@ type OrderItem = {
 };
 
 type Order = {
+  dining_type: "dine_in" | "takeaway";
   id: number;
   order_number: string | null;
   status: string;
@@ -255,7 +258,7 @@ export default function CustomerOrdersClient({ tableNumber }: { tableNumber: num
               <article key={order.id} className="rounded-2xl bg-white p-6 shadow-sm">
                 <div className="flex items-start justify-between gap-4">
                   <div>
-                    <p className="font-bold">ออเดอร์ {order.order_number ?? order.id}</p>
+                    <p className="font-bold">ออเดอร์ {order.order_number ?? order.id}</p><p className="text-sm text-orange-700">{order.dining_type === "takeaway" ? "กลับบ้าน (Takeaway)" : "ทานที่ร้าน"}</p>
                     <p className="mt-1 text-xs text-zinc-500">
                       {new Date(order.created_at).toLocaleString("th-TH")}
                     </p>
@@ -270,7 +273,7 @@ export default function CustomerOrdersClient({ tableNumber }: { tableNumber: num
                     <div key={item.id} className="py-4 first:pt-0">
                       <div className="flex justify-between gap-4">
                         <p className="font-semibold">
-                          {item.menus?.name ?? "เมนู"} × {item.quantity}
+                          {item.menu_name_snapshot ?? item.menus?.name ?? "เมนู"} × {item.quantity}
                         </p>
                         <p className="font-semibold">{formatPrice(item.subtotal)} บาท</p>
                       </div>

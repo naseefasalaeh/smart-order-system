@@ -11,6 +11,7 @@ const menuItems = [
   { name: "เมนูอาหาร", href: "/dashboard/menus" },
   { name: "วัตถุดิบ", href: "/dashboard/ingredients" },
   { name: "โต๊ะและ QR Code", href: "/dashboard/tables" },
+  { name: "ตัวเลือกเสริม", href: "/dashboard/addons" },
   { name: "รายงาน", href: "/dashboard/reports" },
 ];
 
@@ -123,7 +124,7 @@ export default async function TablesPage() {
                     </div>
 
                     <TableQRCode
-                      tableId={String(table.id)}
+                      tableId={String(table.table_number)}
                       tableNumber={table.table_number}
                     />
 

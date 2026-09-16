@@ -40,6 +40,7 @@ export async function POST(request: Request) {
       .select(`
         id,
         order_number,
+        dining_type,
         status,
         total_amount,
         note,
@@ -50,6 +51,8 @@ export async function POST(request: Request) {
           unit_price,
           subtotal,
           note,
+          menu_name_snapshot,
+          menu_price_snapshot,
           menus (name),
           order_item_options (
             id,

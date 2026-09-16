@@ -28,7 +28,8 @@ export async function saveOptionGroup(formData: FormData) {
   const menuId = positiveId(formData.get("menu_id"));
   const groupId = positiveId(formData.get("group_id"));
   const name = String(formData.get("name") ?? "").trim();
-  const selectionType = String(formData.get("selection_type") ?? "");
+  const kind = String(formData.get("kind") ?? "standard");
+  const selectionType = kind === "meat" ? "single" : String(formData.get("selection_type") ?? "");
   const isRequired = formData.get("is_required") === "on";
   const isActive = formData.get("is_active") === "on";
   const displayOrder = Number(formData.get("display_order"));
@@ -38,7 +39,12 @@ export async function saveOptionGroup(formData: FormData) {
 
   if (!menuId) redirect("/dashboard/menus");
 
+  if (kind !== "standard") redirect(editUrl(menuId, "error", "ประเภทกลุ่มไม่ถูกต้อง"));
   if (!name) redirect(editUrl(menuId, "error", "กรุณากรอกชื่อกลุ่มตัวเลือก"));
+  if (groupId) {
+    const { data: existing } = await db.from("menu_option_groups").select("kind").eq("id", groupId).eq("menu_id", menuId).maybeSingle();
+    if (!existing || existing.kind !== "standard") redirect(editUrl(menuId,"error","กรุณาจัดการ Add-on ผ่านตัวเลือกเสริมกลาง"));
+  }
   if (!Number.isInteger(displayOrder) || displayOrder < 0) {
     redirect(editUrl(menuId, "error", "ลำดับกลุ่มต้องเป็นจำนวนเต็มตั้งแต่ 0 ขึ้นไป"));
   }
@@ -99,6 +105,7 @@ export async function saveOptionGroup(formData: FormData) {
     menu_id: menuId,
     name,
     selection_type: selectionType,
+    kind,
     is_required: isRequired,
     min_select: minSelect,
     max_select: maxSelect,
@@ -158,19 +165,19 @@ export async function saveMenuOption(formData: FormData) {
 
   const { data: group, error: groupError } = await db
     .from("menu_option_groups")
-    .select("id, menu_id, selection_type, is_required, is_active")
+    .select("id, menu_id, kind, selection_type, is_required, is_active")
     .eq("id", groupId)
     .eq("menu_id", menuId)
     .maybeSingle();
 
   if (groupError) console.error("โหลดกลุ่มก่อนบันทึก option ไม่สำเร็จ", groupError);
-  if (!group) redirect(editUrl(menuId, "error", "ไม่พบกลุ่มตัวเลือกของเมนูนี้"));
+  if (!group || group.kind !== "standard") redirect(editUrl(menuId, "error", "ไม่พบกลุ่มหรือเป็นกลุ่ม Add-on กลาง"));
 
   const { data: existingOption, error: existingOptionError } = optionId
     ? await db
         .from("menu_options")
         .select("id, group_id, is_available")
-        .eq("id", optionId)
+        .is("addon_id", null).eq("id", optionId)
         .eq("menu_id", menuId)
         .maybeSingle()
     : { data: null, error: null };
@@ -275,7 +282,7 @@ export async function saveMenuOption(formData: FormData) {
     ? await db
         .from("menu_options")
         .update(values)
-        .eq("id", optionId)
+        .is("addon_id", null).eq("id", optionId)
         .eq("menu_id", menuId)
         .select("id")
         .maybeSingle()
@@ -312,7 +319,7 @@ export async function saveOptionIngredient(formData: FormData) {
 
 
   const [{ data: option }, { data: ingredient }] = await Promise.all([
-    db.from("menu_options").select("id").eq("id", optionId).eq("menu_id", menuId).maybeSingle(),
+    db.from("menu_options").select("id").is("addon_id", null).eq("id", optionId).eq("menu_id", menuId).maybeSingle(),
     db.from("ingredients").select("id").eq("id", ingredientId).maybeSingle(),
   ]);
   if (!option || !ingredient) {
@@ -351,7 +358,7 @@ export async function removeOptionIngredient(formData: FormData) {
   const { data: option } = await db
     .from("menu_options")
     .select("id, is_available")
-    .eq("id", optionId)
+    .is("addon_id", null).eq("id", optionId)
     .eq("menu_id", menuId)
     .maybeSingle();
   if (!option) redirect(editUrl(menuId, "error", "ไม่พบตัวเลือกของเมนูนี้"));

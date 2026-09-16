@@ -25,7 +25,7 @@ test("strict IDs reject forged, unsafe, empty and missing values", () => {
   assert.equal(helpers.parseCatalogId("123"), 123);
 });
 
-function actionHarness({ user = { id: "staff" }, item = { id: 1, name: "ข้าว" }, rpcResult = { data: { status: "deleted" } }, readError = null, throws = false } = {}) {
+function actionHarness({ user = { id: "admin" }, isAdmin = true, item = { id: 1, name: "ข้าว" }, rpcResult = { data: { status: "deleted" } }, readError = null, throws = false } = {}) {
   const calls = [];
   const db = {
     auth: { getUser: async () => { calls.push("auth"); return { data: { user } }; } },
@@ -33,7 +33,7 @@ function actionHarness({ user = { id: "staff" }, item = { id: 1, name: "ข้�
       calls.push("read");
       return { select: () => ({ eq: () => ({ maybeSingle: async () => ({ data: item, error: readError }) }) }) };
     },
-    rpc: async () => { calls.push("rpc"); if (throws) throw new Error("private database detail"); return rpcResult; },
+    rpc: async (name) => { if (name === "is_catalog_admin") { calls.push("admin"); return { data: isAdmin }; } calls.push("rpc"); if (throws) throw new Error("private database detail"); return rpcResult; },
   };
   const { deleteCatalogItem } = loadTs("src/app/dashboard/catalog-delete-actions.ts", {
     "next/cache": { revalidatePath: (...args) => calls.push(args.join(":")) },
@@ -53,6 +53,15 @@ test("action authenticates before any read or mutation", async () => {
   assert.equal((await h.action(h.form())).status, "error");
   assert.deepEqual(h.calls, ["auth"]);
 });
+
+test("staff cannot delete or use the retired archive mode", async () => {
+  const staff = actionHarness({ isAdmin: false });
+  assert.match((await staff.action(staff.form())).message, /Admin/);
+  assert.deepEqual(staff.calls, ["auth", "admin"]);
+  const admin = actionHarness();
+  assert.equal((await admin.action(admin.form({ mode: "archive" }))).status, "error");
+  assert.ok(!admin.calls.includes("rpc"));
+});
 test("action rejects invalid input, stale names, missing rows and failed reference access", async () => {
   for (const overrides of [{ id: "no" }, { kind: "orders" }, { mode: "drop" }, { kind: "ingredient", mode: "archive" }, { confirmation: "ปลอม" }]) {
     const h = actionHarness();
@@ -66,14 +75,13 @@ test("action rejects invalid input, stale names, missing rows and failed referen
   }
 });
 test("action returns expected blocks inline, sanitizes errors and revalidates successes", async () => {
-  for (const status of ["deleted", "archived", "used", "recipe", "usage", "not_found", "name_changed"]) {
+  for (const status of ["deleted", "active_orders", "not_found", "name_changed"]) {
     const h = actionHarness({ rpcResult: { data: { status, recipes: ["เมนู A / ตัวเลือก B"] } } });
     const result = await h.action(h.form());
-    const success = ["deleted", "archived"].includes(status);
+    const success = status === "deleted";
     assert.equal(h.calls.includes("/dashboard:layout"), success);
     assert.equal(h.calls.includes("/table:layout"), success);
-    if (status === "recipe") assert.match(result.message, /เมนู A \/ ตัวเลือก B/);
-    if (status === "used") assert.equal(result.status, "used");
+    if (status === "active_orders") assert.match(result.message, /ปิดหรือยกเลิกออเดอร์/);
   }
   for (const setup of [{ rpcResult: { error: { code: "23503", message: "secret" } } }, { throws: true }]) {
     const h = actionHarness(setup);

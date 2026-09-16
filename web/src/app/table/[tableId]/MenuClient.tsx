@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 
 type MenuOption = {
@@ -25,6 +25,7 @@ type MenuOptionGroup = {
 };
 
 type Menu = {
+  category_name: string;
   id: number;
   name: string;
   description: string | null;
@@ -75,6 +76,8 @@ export default function MenuClient({
 }: MenuClientProps) {
   const router = useRouter();
   const [cart, setCart] = useState<CartItem[]>([]);
+  const [diningType, setDiningType] = useState<"dine_in" | "takeaway">("dine_in");
+  const [category, setCategory] = useState("");
   const [selectedMenu, setSelectedMenu] =
     useState<Menu | null>(null);
 
@@ -87,6 +90,8 @@ export default function MenuClient({
   const [orderNote, setOrderNote] = useState("");
   const [showCart, setShowCart] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const submitting = useRef(false);
+  const pendingRequest = useRef<{ payload: string; id: string } | null>(null);
   const [successMessage, setSuccessMessage] = useState("");
   const [errorMessage, setErrorMessage] = useState("");
   function getOrCreateSessionToken() {
@@ -312,24 +317,35 @@ export default function MenuClient({
   }
 
   async function submitOrder() {
-    if (cart.length === 0 || isSubmitting) {
+    if (cart.length === 0 || submitting.current) {
       return;
     }
 
+    submitting.current = true;
     setIsSubmitting(true);
     setErrorMessage("");
     setSuccessMessage("");
     const sessionToken = getOrCreateSessionToken();
 
     try {
+      const payload = JSON.stringify({
+        tableId, sessionToken, diningType, note: orderNote.trim() || undefined,
+        items: cart.map((item) => ({ menuId: item.menuId, quantity: item.quantity,
+          note: item.note ?? undefined, optionSelections: item.optionSelections })),
+      });
+      if (pendingRequest.current?.payload !== payload) {
+        pendingRequest.current = { payload, id: crypto.randomUUID() };
+      }
       const response = await fetch("/api/orders", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
+          requestId: pendingRequest.current.id,
           tableId,
           sessionToken,
+          diningType,
           note: orderNote.trim() || undefined,
           items: cart.map((item) => ({
             menuId: item.menuId,
@@ -369,6 +385,7 @@ export default function MenuClient({
         "";
 
       setCart([]);
+      pendingRequest.current = null;
       setOrderNote("");
       setShowCart(false);
 
@@ -386,6 +403,7 @@ export default function MenuClient({
           : "เกิดข้อผิดพลาดในการส่งออเดอร์"
       );
     } finally {
+      submitting.current = false;
       setIsSubmitting(false);
     }
   }
@@ -404,8 +422,11 @@ export default function MenuClient({
         </div>
       )}
 
+      <div className="mt-6 flex flex-wrap gap-2" aria-label="หมวดอาหาร">
+        {["", ...new Set(menus.map((menu) => menu.category_name))].map((name) => <button key={name} type="button" aria-pressed={category === name} onClick={() => setCategory(name)} className={`rounded-full border px-4 py-2 font-semibold ${category === name ? "border-orange-600 bg-orange-600 text-white" : "border-zinc-300 bg-white text-zinc-700"}`}>{name || "ทั้งหมด"}</button>)}
+      </div>
       <div className="mt-8 grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
-        {menus.map((menu) => (
+        {menus.filter((menu) => !category || menu.category_name === category).map((menu) => (
           <article
             key={menu.id}
             className="overflow-hidden rounded-2xl bg-white shadow-sm transition hover:-translate-y-1 hover:shadow-md"
@@ -853,6 +874,13 @@ export default function MenuClient({
 
               {cart.length > 0 && (
                 <div>
+                  <fieldset className="mb-5 rounded-xl border border-orange-200 p-4">
+                    <legend className="px-2 font-bold">รูปแบบการรับอาหารทั้งออเดอร์</legend>
+                    <div className="flex gap-6">
+                      <label><input type="radio" name="dining_type" value="dine_in" checked={diningType === "dine_in"} onChange={() => setDiningType("dine_in")} /> ทานที่ร้าน</label>
+                      <label><input type="radio" name="dining_type" value="takeaway" checked={diningType === "takeaway"} onChange={() => setDiningType("takeaway")} /> กลับบ้าน</label>
+                    </div>
+                  </fieldset>
                   <label
                     htmlFor="order-note"
                     className="font-bold text-zinc-900"

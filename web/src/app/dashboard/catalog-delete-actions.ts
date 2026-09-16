@@ -11,14 +11,15 @@ export async function deleteCatalogItem(formData: FormData): Promise<DeleteResul
     if (authError || !user) {
       return { status: "error", message: "กรุณาเข้าสู่ระบบก่อนจัดการรายการ" };
     }
+    const admin = await supabase.rpc("is_catalog_admin");
+    if (admin.error || admin.data !== true) return { status: "error", message: "เฉพาะ Admin เท่านั้นที่ลบรายการได้" };
 
     const id = parseCatalogId(formData.get("id"));
     const kind = formData.get("kind");
     const mode = formData.get("mode");
     const confirmation = formData.get("confirmation");
     if (!id || (kind !== "menu" && kind !== "ingredient") ||
-        (mode !== "delete" && mode !== "archive") ||
-        (kind === "ingredient" && mode === "archive") ||
+        mode !== "delete" ||
         typeof confirmation !== "string" || !confirmation) {
       return { status: "error", message: "ข้อมูลรายการหรือการยืนยันไม่ถูกต้อง" };
     }
@@ -33,14 +34,14 @@ export async function deleteCatalogItem(formData: FormData): Promise<DeleteResul
     // The authenticated RPC rechecks names and references under locks, and
     // deletes children and parent atomically. Never split this into HTTP deletes.
     const response = await supabase.rpc("delete_catalog_item_safely", {
-      p_kind: kind, p_id: id, p_name: confirmation, p_archive: mode === "archive",
+      p_kind: kind, p_id: id, p_name: confirmation,
     });
     if (response.error) {
       console.error("Catalog deletion failed", { code: response.error.code });
       return { status: "error", message: "ยังดำเนินการไม่ได้ อาจมีรายการอ้างอิงเพิ่มหรือระบบยังไม่พร้อม กรุณาโหลดหน้าแล้วลองใหม่" };
     }
     const result = deletionResult(response.data);
-    if (result.status === "deleted" || result.status === "archived") {
+    if (result.status === "deleted") {
       revalidatePath("/dashboard", "layout");
       revalidatePath("/table", "layout");
     }

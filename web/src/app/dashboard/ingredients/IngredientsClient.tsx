@@ -23,7 +23,9 @@ type Ingredient = {
 export default function IngredientsClient({
   ingredients,
   activeCategories,
+  canDelete,
 }: {
+  canDelete: boolean;
   ingredients: Ingredient[];
   activeCategories: IngredientCategory[];
 }) {
@@ -157,7 +159,7 @@ export default function IngredientsClient({
                       >
                         แก้ไข
                       </Link>
-                      <CatalogDeleteButton kind="ingredient" id={ingredient.id} name={ingredient.name} />
+                      {canDelete && <CatalogDeleteButton kind="ingredient" id={ingredient.id} name={ingredient.name} />}
                     </td>
                   </tr>
                 );

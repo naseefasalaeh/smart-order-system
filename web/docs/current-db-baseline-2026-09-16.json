@@ -1,0 +1,78 @@
+{
+  "categories": {
+    "count": 5,
+    "sha256": "1763c1e799dbecd87962484c9eac7a957125554a756245f9e321ba29e44d7307"
+  },
+  "ingredient_categories": {
+    "count": 10,
+    "sha256": "bc22ddaa83762a74904ed7f4d6eeed8d61a8f0625f5851aeeec3c3c5b7c3fdc9"
+  },
+  "menus": {
+    "count": 11,
+    "sha256": "14f1fbd8e1672b9992e1af7abce0c82ece950f278b8364973acc4116cd10df40"
+  },
+  "ingredients": {
+    "count": 12,
+    "sha256": "6fac81bd5de3417ec697eb7c433448e80b8a6701ec9f0e140d235df91ad16334"
+  },
+  "menu_ingredients": {
+    "count": 17,
+    "sha256": "c2de8a93838eb8bb8a64cc91c2dfe872aaa81b0a4ec333bebe985f6ca98e4dbf"
+  },
+  "menu_option_groups": {
+    "count": 33,
+    "sha256": "00ef57a59488ab6f81206b550fb030bd172e13862400e229b6536235352c80f1"
+  },
+  "menu_options": {
+    "count": 121,
+    "sha256": "a277de24be532e8bdf0d241bc8b9d9ec0fd7199ecf4c88e3b0e6dc779c3a3869"
+  },
+  "menu_option_ingredients": {
+    "count": 44,
+    "sha256": "a5cb4efaff8026a5e5998d7740544d995841eade854d7d02b996a1d722530c43"
+  },
+  "addons": {
+    "count": 12,
+    "sha256": "d3da72934e2981367da7ac2076e15b02598f04df4be9dbd82d7baca4dac15914"
+  },
+  "addon_ingredients": {
+    "count": 14,
+    "sha256": "3c15df97ea41b035442236c73773628653bf911388750241565be84bdb86d429"
+  },
+  "orders": {
+    "count": 69,
+    "sha256": "2a93c7e12c263a10193a292b74b6117b513d0cbfa1ec6db069ec88122acb4513"
+  },
+  "order_items": {
+    "count": 75,
+    "sha256": "b61cf044421cf4d44362916aa7b6460afc3fd6a2bf5ad9ff014575a4aa1a32df"
+  },
+  "order_item_options": {
+    "count": 43,
+    "sha256": "255df40ac56ff4db196a302065d536a0773e777d23a8494e6ae9f9269c232d93"
+  },
+  "order_ingredient_usages": {
+    "count": 132,
+    "sha256": "51323fe1e5677ee17854cbf364d8631e8ec6781f0cd7c9c1d24832199320f0c1"
+  },
+  "payments": {
+    "count": 51,
+    "sha256": "49ca54dabdff8e003b4414efee13188b64d97df2beef5a04620f179e2a1bae66"
+  },
+  "restaurant_tables": {
+    "count": 5,
+    "sha256": "62d79002e739675b2bcdf8be34c03ce9c1bb7b4be6134bceec0828433b4b182c"
+  },
+  "dining_sessions": {
+    "count": 24,
+    "sha256": "53deaa3e89cf3449afe96dede5a3e7c0d77ef2e904a4231d280108cb78fb8fb9"
+  },
+  "profiles": {
+    "count": 1,
+    "sha256": "da0fa29b03bc8d4359b634e0d9d00515b52f5be3cb1d724520b8deecbf51b73b"
+  },
+  "reviews": {
+    "count": 0,
+    "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+  }
+}

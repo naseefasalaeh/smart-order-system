@@ -11,6 +11,7 @@ const menuItems = [
   { name: "เมนูอาหาร", href: "/dashboard/menus" },
   { name: "วัตถุดิบ", href: "/dashboard/ingredients" },
   { name: "โต๊ะและ QR Code", href: "/dashboard/tables" },
+  { name: "ตัวเลือกเสริม", href: "/dashboard/addons" },
   { name: "รายงาน", href: "/dashboard/reports" },
 ];
 
@@ -27,6 +28,7 @@ export default async function MenusPage({ searchParams }: {
   if (!user) {
     redirect("/login");
   }
+  const { data: canDelete } = await supabase.rpc("is_catalog_admin");
 
   const [
     { data: menus, error: menusError },
@@ -235,7 +237,7 @@ export default async function MenusPage({ searchParams }: {
                           >
                             แก้ไข
                           </Link>
-                          <CatalogDeleteButton kind="menu" id={Number(menu.id)} name={menu.name} />
+                          {canDelete === true && <CatalogDeleteButton kind="menu" id={Number(menu.id)} name={menu.name} />}
                         </td>
                       </tr>
                     ))}

@@ -1,4 +1,5 @@
 import Link from "next/link";
+import MenuAddonPicker from "@/components/menu-addon-picker";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
@@ -25,6 +26,11 @@ export default async function NewMenuPage({
     .order("name", { ascending: true });
   if (categoriesError) console.error("โหลดหมวดหมู่เมนูไม่สำเร็จ", categoriesError);
 
+  const [addonsResult, ingredientsResult] = await Promise.all([
+    supabase.from("addons").select("id,name,category,additional_price,is_available,max_quantity").order("name"),
+    supabase.from("ingredients").select("id,name,unit").order("name"),
+  ]);
+
   async function addMenu(formData: FormData) {
     "use server";
 
@@ -35,6 +41,7 @@ export default async function NewMenuPage({
 
     if (!actionUser) redirect("/login");
 
+    if (addonsResult.error || ingredientsResult.error) redirect("/dashboard/menus/new?error=" + encodeURIComponent("โหลดตัวเลือกเสริมไม่สำเร็จ"));
     const name = String(formData.get("name") ?? "").trim();
     const description = String(
       formData.get("description") ?? ""
@@ -57,27 +64,27 @@ export default async function NewMenuPage({
       redirect("/dashboard/menus/new?error=" + encodeURIComponent("กรุณากรอกข้อมูลเมนูให้ถูกต้อง"));
     }
 
-    const { data: createdMenu, error } = await supabase
-      .from("menus")
-      .insert({
+    const { data: createdMenuId, error } = await supabase.rpc("save_menu_with_addons", {
+      p_id: null, p_addon_ids: formData.getAll("addon_ids").map(Number),
+      p_values: {
+        meat_required: formData.get("meat_required") === "on",
         name,
         description: description || null,
         category_id: categoryId,
         price,
         image_url: imageUrl || null,
         is_available: isAvailable,
-      })
-      .select("id")
-      .single();
+      },
+    });
 
-    if (error || !createdMenu) {
+    if (error || !createdMenuId) {
       console.error("เพิ่มเมนูไม่สำเร็จ", error);
       redirect("/dashboard/menus/new?error=" + encodeURIComponent("เพิ่มเมนูไม่สำเร็จ กรุณาลองใหม่"));
     }
 
     revalidatePath("/dashboard");
     revalidatePath("/dashboard/menus");
-    redirect(`/dashboard/menus/${createdMenu.id}/edit?tab=recipe&success=${encodeURIComponent("สร้างเมนูแล้ว กรุณากำหนดสูตรพื้นฐานและกลุ่มตัวเลือก")}`);
+    redirect(`/dashboard/menus/${createdMenuId}/edit?tab=recipe&success=${encodeURIComponent("สร้างเมนูแล้ว กรุณากำหนดสูตรพื้นฐานและกลุ่มตัวเลือก")}`);
   }
 
   return (
@@ -119,6 +126,7 @@ export default async function NewMenuPage({
             </div>
           ) : (
             <form action={addMenu} className="mt-8 space-y-5">
+              {addonsResult.error || ingredientsResult.error ? <p role="alert">โหลดตัวเลือกเสริมไม่สำเร็จ กรุณาโหลดหน้าใหม่ก่อนบันทึก</p> : <MenuAddonPicker addons={addonsResult.data ?? []} ingredients={ingredientsResult.data ?? []} />}
               <div>
                 <label
                   htmlFor="name"

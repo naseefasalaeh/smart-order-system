@@ -3,6 +3,7 @@ import LogoutButton from "@/components/logout-button";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import IngredientsClient from "./IngredientsClient";
+import OrderRealtimeRefresh from "@/components/order-realtime-refresh";
 
 const menuItems = [
   { name: "ภาพรวม", href: "/dashboard" },
@@ -11,6 +12,7 @@ const menuItems = [
   { name: "เมนูอาหาร", href: "/dashboard/menus" },
   { name: "วัตถุดิบ", href: "/dashboard/ingredients" },
   { name: "โต๊ะและ QR Code", href: "/dashboard/tables" },
+  { name: "ตัวเลือกเสริม", href: "/dashboard/addons" },
   { name: "รายงาน", href: "/dashboard/reports" },
 ];
 
@@ -24,6 +26,7 @@ export default async function IngredientsPage({ searchParams }: {
   } = await supabase.auth.getUser();
 
   if (!user) redirect("/login");
+  const { data: canDelete } = await supabase.rpc("is_catalog_admin");
 
   const [ingredientsResult, categoriesResult] = await Promise.all([
     supabase
@@ -62,6 +65,7 @@ export default async function IngredientsPage({ searchParams }: {
 
   return (
     <main className="min-h-screen bg-orange-50 lg:flex">
+      <OrderRealtimeRefresh channelName="ingredients-order-stock" fallbackIntervalMs={5_000} pollWhenSubscribed />
       <aside className="w-full bg-zinc-900 p-6 text-white lg:min-h-screen lg:w-64">
         <div>
           <p className="text-sm font-semibold text-orange-400">SMART ORDER</p>
@@ -130,6 +134,7 @@ export default async function IngredientsPage({ searchParams }: {
             </div>
           ) : (
             <IngredientsClient
+              canDelete={canDelete === true}
               ingredients={normalizedIngredients}
               activeCategories={categoriesResult.data ?? []}
             />

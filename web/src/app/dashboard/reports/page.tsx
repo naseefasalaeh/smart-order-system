@@ -10,6 +10,7 @@ const menuItems = [
   { name: "เมนูอาหาร", href: "/dashboard/menus" },
   { name: "วัตถุดิบ", href: "/dashboard/ingredients" },
   { name: "โต๊ะและ QR Code", href: "/dashboard/tables" },
+  { name: "ตัวเลือกเสริม", href: "/dashboard/addons" },
   { name: "รายงาน", href: "/dashboard/reports" },
 ];
 
@@ -86,6 +87,7 @@ export default async function ReportsPage() {
           id,
           quantity,
           subtotal,
+          menu_name_snapshot,
           menus (
             name
           )
@@ -197,7 +199,7 @@ export default async function ReportsPage() {
         ? item.menus[0]
         : item.menus;
 
-      const menuName = menu?.name ?? "ไม่พบชื่อเมนู";
+      const menuName = item.menu_name_snapshot ?? menu?.name ?? "ไม่พบชื่อเมนู";
 
       if (!menuSales[menuName]) {
         menuSales[menuName] = {

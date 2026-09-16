@@ -1,4 +1,5 @@
 import Link from "next/link";
+import MenuAddonPicker from "@/components/menu-addon-picker";
 import { notFound, redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
@@ -82,13 +83,13 @@ export default async function EditMenuPage({
   const [groupsResult, optionsResult] = await Promise.all([
     adminDb
       .from("menu_option_groups")
-      .select("id, name, selection_type, is_required, min_select, max_select, max_total_quantity, display_order, is_active")
+      .select("id, name, kind, selection_type, is_required, min_select, max_select, max_total_quantity, display_order, is_active")
       .eq("menu_id", id)
       .order("display_order", { ascending: true })
       .order("id", { ascending: true }),
     adminDb
       .from("menu_options")
-      .select("id, group_id, name, additional_price, sort_order, is_available, max_quantity")
+      .select("id, group_id, addon_id, name, additional_price, sort_order, is_available, max_quantity")
       .eq("menu_id", id)
       .order("sort_order", { ascending: true })
       .order("id", { ascending: true }),
@@ -100,6 +101,8 @@ export default async function EditMenuPage({
         .select("menu_option_id, ingredient_id, quantity_required")
         .in("menu_option_id", optionIds)
     : { data: [], error: null };
+
+  const addonsResult = await supabase.from("addons").select("id,name,category,additional_price,is_available,max_quantity").order("name");
 
   async function updateMenu(formData: FormData) {
     "use server";
@@ -133,18 +136,19 @@ export default async function EditMenuPage({
       redirect(`/dashboard/menus/${id}/edit?tab=info&error=${encodeURIComponent("กรุณากรอกข้อมูลเมนูให้ถูกต้อง")}`);
     }
 
-    const { error } = await supabase
-      .from("menus")
-      .update({
+    if (addonsResult.error || optionsResult.error || ingredientsError) redirect(`/dashboard/menus/${id}/edit?error=${encodeURIComponent("โหลดตัวเลือกเสริมไม่สำเร็จ")}`);
+    const { error } = await supabase.rpc("save_menu_with_addons", {
+      p_id: Number(id), p_addon_ids: formData.getAll("addon_ids").map(Number),
+      p_values: {
+        meat_required: formData.get("meat_required") === "on",
         name,
         category_id: categoryId,
         description: description || null,
         price,
         image_url: imageUrl || null,
         is_available: isAvailable,
-        updated_at: new Date().toISOString(),
-      })
-      .eq("id", id);
+      },
+    });
 
     if (error) {
       console.error("แก้ไขเมนูไม่สำเร็จ", error);
@@ -321,6 +325,7 @@ export default async function EditMenuPage({
           </p>
 
           <form action={updateMenu} className="mt-8 space-y-5">
+            {addonsResult.error || optionsResult.error || ingredientsError ? <p role="alert">โหลดตัวเลือกเสริมไม่สำเร็จ กรุณาโหลดหน้าใหม่ก่อนบันทึก</p> : <MenuAddonPicker meatRequired={(groupsResult.data ?? []).some((g) => g.kind === "meat" && g.is_required)} addons={addonsResult.data ?? []} ingredients={ingredients ?? []} selectedIds={(optionsResult.data ?? []).filter((o) => o.addon_id !== null && o.is_available).map((o) => Number(o.addon_id))} />}
             <div>
               <label
                 htmlFor="name"
@@ -487,9 +492,10 @@ export default async function EditMenuPage({
             ) : (
               <OptionGroupsEditor
                 menuId={Number(id)}
-                groups={(groupsResult.data ?? []).map((group) => ({
+                groups={(groupsResult.data ?? []).filter((group) => group.kind === "standard").map((group) => ({
                   id: Number(group.id),
                   name: String(group.name),
+                  kind: group.kind === "meat" ? "meat" : "standard",
                   selection_type: group.selection_type === "single" ? "single" : "multiple",
                   is_required: Boolean(group.is_required),
                   min_select: Number(group.min_select),
@@ -498,7 +504,7 @@ export default async function EditMenuPage({
                   display_order: Number(group.display_order),
                   is_active: Boolean(group.is_active),
                 }))}
-                options={(optionsResult.data ?? []).map((option) => ({
+                options={(optionsResult.data ?? []).filter((option) => option.addon_id === null).map((option) => ({
                   id: Number(option.id),
                   group_id: option.group_id === null ? null : Number(option.group_id),
                   name: String(option.name),

@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { createHash } from "node:crypto";
 import {
   type MenuOptionGroupRule,
   type MenuOptionRule,
@@ -17,6 +18,8 @@ type OrderItemInput = {
 };
 
 type CreateOrderBody = {
+  requestId?: string;
+  diningType?: "dine_in" | "takeaway";
   tableId: string;
   sessionToken: string;
   items: OrderItemInput[];
@@ -51,6 +54,10 @@ export async function POST(request: Request) {
       );
     }
     const { tableId, sessionToken, items, note } = body;
+    const diningType = body.diningType === undefined ? "dine_in" : body.diningType;
+    if (diningType !== "dine_in" && diningType !== "takeaway") {
+      return NextResponse.json({ error: "รูปแบบการรับอาหารไม่ถูกต้อง" }, { status: 400 });
+    }
 
     const numericTableId = Number(tableId);
 
@@ -69,6 +76,10 @@ export async function POST(request: Request) {
         { error: "ข้อมูลรอบโต๊ะไม่ถูกต้อง กรุณาสแกน QR ใหม่" },
         { status: 400 },
       );
+    }
+
+    if (body.requestId !== undefined && (typeof body.requestId !== "string" || !uuidPattern.test(body.requestId))) {
+      return NextResponse.json({ error: "รหัสคำสั่งซื้อไม่ถูกต้อง" }, { status: 400 });
     }
 
     if (!Array.isArray(items) || items.length === 0) {
@@ -173,6 +184,21 @@ export async function POST(request: Request) {
      * เพื่อเรียก RPC หักสต็อกที่อนุญาตเฉพาะ service_role
      */
     const supabase = createAdminClient();
+    const requestFingerprint = createHash("sha256").update(JSON.stringify({
+      tableId: numericTableId, sessionToken, diningType,
+      items: validatedItems, note: typeof note === "string" ? note.trim().slice(0, 500) : "",
+    })).digest("hex");
+    if (body.requestId) {
+      const { data: previous, error } = await supabase.from("orders")
+        .select("id,order_number,table_id,session_id,status,total_amount,stock_deducted,request_fingerprint")
+        .eq("request_id", body.requestId).maybeSingle();
+      if (error) return NextResponse.json({ error: "ตรวจสอบคำสั่งซื้อไม่สำเร็จ" }, { status: 500 });
+      if (previous) {
+        if (previous.request_fingerprint !== requestFingerprint) return NextResponse.json({ error: "รหัสคำสั่งซื้อถูกใช้กับรายการอื่นแล้ว" }, { status: 409 });
+        const { request_fingerprint: fingerprint, ...order } = previous;
+        if (fingerprint) return NextResponse.json({ message: "คำสั่งซื้อนี้ได้รับแล้ว", order }, { status: 200 });
+      }
+    }
 
     /*
      * ตรวจสอบโต๊ะ
@@ -282,7 +308,7 @@ export async function POST(request: Request) {
         )
         .in("menu_id", menuIds),
       supabase
-        .from("menu_options")
+        .from("effective_menu_options")
         .select(
           "id, menu_id, group_id, name, additional_price, is_available, max_quantity",
         )
@@ -366,6 +392,9 @@ export async function POST(request: Request) {
         { status: 500 },
       );
     }
+    if (menuIds.some((id) => !(menuIngredients ?? []).some((r) => Number(r.menu_id) === id))) {
+      return NextResponse.json({ error: "สูตรพื้นฐานไม่ครบ กรุณาแจ้งพนักงาน" }, { status: 409 });
+    }
 
     /*
      * คำนวณวัตถุดิบรวมตามจำนวนที่สั่ง
@@ -395,7 +424,7 @@ export async function POST(request: Request) {
     if (allOptionIds.length > 0) {
       const { data: optionIngredients, error: optionIngredientsError } =
         await supabase
-          .from("menu_option_ingredients")
+          .from("effective_menu_option_ingredients")
           .select("menu_option_id, ingredient_id, quantity_required")
           .in("menu_option_id", allOptionIds);
 
@@ -408,6 +437,9 @@ export async function POST(request: Request) {
       }
 
       const optionIngredientRows = optionIngredients ?? [];
+      if (allOptionIds.some((id) => !optionIngredientRows.some((r) => Number(r.menu_option_id) === id))) {
+        return NextResponse.json({ error: "สูตรตัวเลือกไม่ครบ กรุณาแจ้งพนักงาน" }, { status: 409 });
+      }
 
       /*
        * คิดตามจำนวนจานของแต่ละรายการ
@@ -547,7 +579,7 @@ export async function POST(request: Request) {
 
       const additionalPrice = selectedOptions.reduce(
         (total, option) =>
-          total + option.additionalPrice * option.quantity,
+          total + Math.round(option.additionalPrice * 100) * option.quantity,
         0,
       );
 
@@ -555,8 +587,9 @@ export async function POST(request: Request) {
        * unit_price คือราคาต่อหนึ่งจานรวมตัวเลือกแล้ว
        * เช่น กะเพรา 50 + ไข่ดาว 10 = 60 บาท
        */
-      const unitPrice = basePrice + additionalPrice;
-      const subtotal = unitPrice * item.quantity;
+      const unitCents = Math.round(basePrice * 100) + additionalPrice;
+      const unitPrice = unitCents / 100;
+      const subtotal = (unitCents * item.quantity) / 100;
 
       return {
         menu_id: Number(menu.id),
@@ -569,9 +602,9 @@ export async function POST(request: Request) {
     });
 
     const totalAmount = orderItems.reduce(
-      (total, item) => total + item.subtotal,
+      (total, item) => total + Math.round(item.subtotal * 100),
       0,
-    );
+    ) / 100;
 
     const orderNote = typeof note === "string" ? note.trim().slice(0, 500) : "";
 
@@ -598,11 +631,13 @@ export async function POST(request: Request) {
     const { data: createdOrder, error: createOrderError } = await supabase
       .rpc("create_order_with_stock", {
         p_table_id: numericTableId,
+        p_dining_type: diningType,
         p_session_token: sessionToken,
         p_order_note: orderNote || null,
         p_total_amount: totalAmount,
         p_items: itemsForTransaction,
         p_required_items: requiredItems,
+        ...(body.requestId ? { p_request_id: body.requestId, p_request_fingerprint: requestFingerprint } : {}),
       })
       .single();
 
@@ -617,6 +652,7 @@ export async function POST(request: Request) {
       const isInsufficientStock =
         createOrderError?.code === "P0001" &&
         createOrderError.message.includes("INSUFFICIENT_STOCK");
+      const isConflict = isInsufficientStock || /RECIPE_REQUIRED|REQUEST_CONFLICT|OPTION_CHANGED|PRICE_CHANGED/.test(createOrderError?.message ?? "");
 
       return NextResponse.json(
         {
@@ -624,7 +660,7 @@ export async function POST(request: Request) {
             ? "วัตถุดิบไม่เพียงพอ"
             : "สร้างออเดอร์ไม่สำเร็จ กรุณาลองใหม่",
         },
-        { status: isInsufficientStock ? 409 : 500 },
+        { status: isConflict ? 409 : 500 },
       );
     }
 
