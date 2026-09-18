@@ -1,8 +1,9 @@
 import Link from "next/link";
+import DashboardSidebar from "@/components/dashboard-sidebar";
 import { notFound, redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
-import { requireDashboardRole } from "@/lib/dashboard-auth";
+import { requireDashboardContext, requireDashboardRole } from "@/lib/dashboard-auth";
 
 type EditIngredientPageProps = {
   params: Promise<{
@@ -21,18 +22,9 @@ export default async function EditIngredientPage({
   params,
   searchParams,
 }: EditIngredientPageProps) {
-  await requireDashboardRole(["admin"]);
+  const { db: supabase, role } = await requireDashboardContext(["admin"]);
   const { id } = await params;
   const { error: errorMessage } = await searchParams;
-  const supabase = await createClient();
-
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-
-  if (!user) {
-    redirect("/login");
-  }
 
   const [ingredientResult, categoriesResult] = await Promise.all([
     supabase
@@ -147,7 +139,9 @@ export default async function EditIngredientPage({
   }
 
   return (
-    <main className="min-h-screen bg-orange-50 px-6 py-10">
+    <div className="min-h-screen bg-orange-50 lg:flex">
+    <DashboardSidebar role={role} activePath="/dashboard/ingredients" />
+    <main className="min-w-0 flex-1 px-6 py-10">
       <div className="mx-auto max-w-2xl">
         <Link
           href="/dashboard/ingredients"
@@ -319,5 +313,6 @@ export default async function EditIngredientPage({
         </section>
       </div>
     </main>
+    </div>
   );
 }

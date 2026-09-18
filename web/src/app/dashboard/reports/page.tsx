@@ -1,20 +1,8 @@
 import Link from "next/link";
-import LogoutButton from "@/components/logout-button";
+import DashboardSidebar from "@/components/dashboard-sidebar";
 import ReportsCharts from "@/components/reports-charts";
 import { bangkokCurrentMonth, bangkokMonthRange } from "@/lib/bangkok-date";
 import { requireDashboardContext } from "@/lib/dashboard-auth";
-
-const menuItems = [
-  { name: "ภาพรวม", href: "/dashboard" },
-  { name: "ออเดอร์", href: "/dashboard/orders" },
-  { name: "คิวครัว", href: "/dashboard/kitchen" },
-  { name: "พร้อมเสิร์ฟ", href: "/dashboard/ready" },
-  { name: "เมนูอาหาร", href: "/dashboard/menus" },
-  { name: "วัตถุดิบ", href: "/dashboard/ingredients" },
-  { name: "โต๊ะและ QR Code", href: "/dashboard/tables" },
-  { name: "ตัวเลือกเสริม", href: "/dashboard/addons" },
-  { name: "รายงาน", href: "/dashboard/reports" },
-];
 
 const statusLabels: Record<string, string> = {
   confirmed: "รอเริ่มทำ",
@@ -42,7 +30,7 @@ function formatCurrency(value: number) {
 }
 
 export default async function ReportsPage({ searchParams }: { searchParams: Promise<{ month?: string }> }) {
-  const { db: supabase } = await requireDashboardContext(["admin"]);
+  const { db: supabase, role } = await requireDashboardContext(["admin"]);
   const { month: requestedMonth } = await searchParams;
   const month = bangkokMonthRange(requestedMonth ?? "") ? requestedMonth! : bangkokCurrentMonth();
   const { start, end } = bangkokMonthRange(month)!;
@@ -284,33 +272,7 @@ export default async function ReportsPage({ searchParams }: { searchParams: Prom
 
   return (
     <main className="min-h-screen bg-orange-50 lg:flex">
-      <aside className="w-full bg-zinc-900 p-6 text-white lg:min-h-screen lg:w-64">
-        <p className="text-sm font-semibold text-orange-400">
-          SMART ORDER
-        </p>
-
-        <h1 className="mt-1 text-2xl font-bold">
-          ระบบจัดการร้าน
-        </h1>
-
-        <nav className="mt-8 space-y-2">
-          {menuItems.map((item) => (
-            <Link
-              key={item.name}
-              href={item.href}
-              className={`block rounded-xl px-4 py-3 transition ${
-                item.name === "รายงาน"
-                  ? "bg-orange-500 font-semibold text-white"
-                  : "text-zinc-300 hover:bg-zinc-800 hover:text-white"
-              }`}
-            >
-              {item.name}
-            </Link>
-          ))}
-        </nav>
-
-        <LogoutButton />
-      </aside>
+      <DashboardSidebar role={role} activePath="/dashboard/reports" />
 
       <section className="min-w-0 flex-1 p-6 sm:p-8">
         <div className="mx-auto max-w-7xl">

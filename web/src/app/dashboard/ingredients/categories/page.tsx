@@ -1,8 +1,9 @@
 import Link from "next/link";
+import DashboardSidebar from "@/components/dashboard-sidebar";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import { requireDashboardRole } from "@/lib/dashboard-auth";
+import { requireDashboardContext, requireDashboardRole } from "@/lib/dashboard-auth";
 
 type CategoriesPageProps = {
   searchParams: Promise<{ error?: string; success?: string }>;
@@ -34,7 +35,7 @@ async function requireAuthenticatedClient() {
 export default async function IngredientCategoriesPage({
   searchParams,
 }: CategoriesPageProps) {
-  const supabase = await requireAuthenticatedClient();
+  const { db: supabase, role } = await requireDashboardContext(["admin"]);
   const { error: errorMessage, success: successMessage } = await searchParams;
   const { data: categories, error } = await supabase
     .from("ingredient_categories")
@@ -157,7 +158,9 @@ export default async function IngredientCategoriesPage({
   }
 
   return (
-    <main className="min-h-screen bg-orange-50 px-6 py-10">
+    <div className="min-h-screen bg-orange-50 lg:flex">
+    <DashboardSidebar role={role} activePath="/dashboard/ingredients" />
+    <main className="min-w-0 flex-1 px-6 py-10">
       <div className="mx-auto max-w-4xl">
         <Link
           href="/dashboard/ingredients"
@@ -296,5 +299,6 @@ export default async function IngredientCategoriesPage({
         </section>
       </div>
     </main>
+    </div>
   );
 }

@@ -1,8 +1,9 @@
 import Link from "next/link";
+import DashboardSidebar from "@/components/dashboard-sidebar";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import { requireDashboardRole } from "@/lib/dashboard-auth";
+import { requireDashboardContext, requireDashboardRole } from "@/lib/dashboard-auth";
 
 type NewIngredientPageProps = {
   searchParams: Promise<{ error?: string }>;
@@ -15,17 +16,8 @@ function newIngredientErrorRedirect(message: string): never {
 export default async function NewIngredientPage({
   searchParams,
 }: NewIngredientPageProps) {
-  await requireDashboardRole(["admin"]);
-  const supabase = await createClient();
+  const { db: supabase, role } = await requireDashboardContext(["admin"]);
   const { error: errorMessage } = await searchParams;
-
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-
-  if (!user) {
-    redirect("/login");
-  }
 
   const { data: categories, error: categoriesError } = await supabase
     .from("ingredient_categories")
@@ -110,7 +102,9 @@ export default async function NewIngredientPage({
   }
 
   return (
-    <main className="min-h-screen bg-orange-50 px-6 py-10">
+    <div className="min-h-screen bg-orange-50 lg:flex">
+    <DashboardSidebar role={role} activePath="/dashboard/ingredients" />
+    <main className="min-w-0 flex-1 px-6 py-10">
       <div className="mx-auto max-w-2xl">
         <Link
           href="/dashboard/ingredients"
@@ -277,5 +271,6 @@ export default async function NewIngredientPage({
         </section>
       </div>
     </main>
+    </div>
   );
 }

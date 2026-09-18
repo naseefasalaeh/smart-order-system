@@ -1,22 +1,9 @@
 import Link from "next/link";
-import LogoutButton from "@/components/logout-button";
+import DashboardSidebar from "@/components/dashboard-sidebar";
 import OrderRealtimeRefresh from "@/components/order-realtime-refresh";
 import UpdateOrderStatusButton from "@/components/update-order-status-button";
 import { bangkokDayRange, bangkokToday } from "@/lib/bangkok-date";
 import { requireDashboardContext } from "@/lib/dashboard-auth";
-import { dashboardMenuForRole } from "@/lib/dashboard-navigation";
-
-const menuItems = [
-  { name: "ภาพรวม", href: "/dashboard" },
-  { name: "ออเดอร์", href: "/dashboard/orders" },
-  { name: "คิวครัว", href: "/dashboard/kitchen" },
-  { name: "พร้อมเสิร์ฟ", href: "/dashboard/ready" },
-  { name: "เมนูอาหาร", href: "/dashboard/menus" },
-  { name: "วัตถุดิบ", href: "/dashboard/ingredients" },
-  { name: "โต๊ะและ QR Code", href: "/dashboard/tables" },
-  { name: "ตัวเลือกเสริม", href: "/dashboard/addons" },
-  { name: "รายงาน", href: "/dashboard/reports" },
-];
 
 const statusLabels: Record<string, string> = {
   confirmed: "รอเริ่มทำ",
@@ -132,29 +119,7 @@ export default async function OrdersPage({ searchParams }: OrdersPageProps) {
         channelName={`staff-orders:${activeStatus || "current"}`}
       />
 
-      <aside className="w-full bg-zinc-900 p-6 text-white lg:min-h-screen lg:w-64">
-        <p className="text-sm font-semibold text-orange-400">SMART ORDER</p>
-
-        <h1 className="mt-1 text-2xl font-bold">ระบบจัดการร้าน</h1>
-
-        <nav className="mt-8 space-y-2">
-          {dashboardMenuForRole(menuItems, role).map((item) => (
-            <Link
-              key={item.name}
-              href={item.href}
-              className={`block rounded-xl px-4 py-3 transition ${
-                item.name === "ออเดอร์"
-                  ? "bg-orange-500 font-semibold text-white"
-                  : "text-zinc-300 hover:bg-zinc-800 hover:text-white"
-              }`}
-            >
-              {item.name}
-            </Link>
-          ))}
-        </nav>
-
-        <LogoutButton />
-      </aside>
+      <DashboardSidebar role={role} activePath="/dashboard/orders" />
 
       <section className="flex-1 p-6 sm:p-8">
         <div className="mx-auto max-w-7xl">

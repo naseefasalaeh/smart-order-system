@@ -1,9 +1,10 @@
 import Link from "next/link";
+import DashboardSidebar from "@/components/dashboard-sidebar";
 import MenuAddonPicker from "@/components/menu-addon-picker";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import { requireDashboardRole } from "@/lib/dashboard-auth";
+import { requireDashboardContext, requireDashboardRole } from "@/lib/dashboard-auth";
 import NewMenuRecipe from "@/components/new-menu-recipe";
 
 export default async function NewMenuPage({
@@ -11,17 +12,8 @@ export default async function NewMenuPage({
 }: {
   searchParams: Promise<{ error?: string }>;
 }) {
-  await requireDashboardRole(["admin"]);
+  const { db: supabase, role } = await requireDashboardContext(["admin"]);
   const query = await searchParams;
-  const supabase = await createClient();
-
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-
-  if (!user) {
-    redirect("/login");
-  }
 
   const { data: categories, error: categoriesError } = await supabase
     .from("categories")
@@ -99,7 +91,9 @@ export default async function NewMenuPage({
   }
 
   return (
-    <main className="min-h-screen bg-orange-50 px-6 py-10">
+    <div className="min-h-screen bg-orange-50 lg:flex">
+    <DashboardSidebar role={role} activePath="/dashboard/menus" />
+    <main className="min-w-0 flex-1 px-6 py-10">
       <div className="mx-auto max-w-2xl">
         <Link
           href="/dashboard/menus"
@@ -286,5 +280,6 @@ export default async function NewMenuPage({
         </section>
       </div>
     </main>
+    </div>
   );
 }

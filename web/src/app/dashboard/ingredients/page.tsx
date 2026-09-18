@@ -1,25 +1,13 @@
 import Link from "next/link";
-import LogoutButton from "@/components/logout-button";
+import DashboardSidebar from "@/components/dashboard-sidebar";
 import IngredientsClient from "./IngredientsClient";
 import OrderRealtimeRefresh from "@/components/order-realtime-refresh";
 import { requireDashboardContext } from "@/lib/dashboard-auth";
 
-const menuItems = [
-  { name: "ภาพรวม", href: "/dashboard" },
-  { name: "ออเดอร์", href: "/dashboard/orders" },
-  { name: "คิวครัว", href: "/dashboard/kitchen" },
-  { name: "พร้อมเสิร์ฟ", href: "/dashboard/ready" },
-  { name: "เมนูอาหาร", href: "/dashboard/menus" },
-  { name: "วัตถุดิบ", href: "/dashboard/ingredients" },
-  { name: "โต๊ะและ QR Code", href: "/dashboard/tables" },
-  { name: "ตัวเลือกเสริม", href: "/dashboard/addons" },
-  { name: "รายงาน", href: "/dashboard/reports" },
-];
-
 export default async function IngredientsPage({ searchParams }: {
   searchParams: Promise<{ success?: string }>;
 }) {
-  const { db: supabase } = await requireDashboardContext(["admin"]);
+  const { db: supabase, role } = await requireDashboardContext(["admin"]);
   const { success } = await searchParams;
 
   const [ingredientsResult, categoriesResult] = await Promise.all([
@@ -59,29 +47,7 @@ export default async function IngredientsPage({ searchParams }: {
   return (
     <main className="min-h-screen bg-orange-50 lg:flex">
       <OrderRealtimeRefresh channelName="ingredients-order-stock" fallbackIntervalMs={5_000} pollWhenSubscribed />
-      <aside className="w-full bg-zinc-900 p-6 text-white lg:min-h-screen lg:w-64">
-        <div>
-          <p className="text-sm font-semibold text-orange-400">SMART ORDER</p>
-          <h1 className="mt-1 text-2xl font-bold">ระบบจัดการร้าน</h1>
-        </div>
-
-        <nav className="mt-8 space-y-2">
-          {menuItems.map((item) => (
-            <Link
-              key={item.name}
-              href={item.href}
-              className={`block rounded-xl px-4 py-3 transition ${
-                item.name === "วัตถุดิบ"
-                  ? "bg-orange-500 font-semibold text-white"
-                  : "text-zinc-300 hover:bg-zinc-800 hover:text-white"
-              }`}
-            >
-              {item.name}
-            </Link>
-          ))}
-        </nav>
-        <LogoutButton />
-      </aside>
+      <DashboardSidebar role={role} activePath="/dashboard/ingredients" />
 
       <section className="flex-1 p-6 sm:p-8">
         <div className="mx-auto max-w-7xl">

@@ -1,19 +1,6 @@
 import Link from "next/link";
-import LogoutButton from "@/components/logout-button";
+import DashboardSidebar from "@/components/dashboard-sidebar";
 import { requireDashboardContext } from "@/lib/dashboard-auth";
-import { dashboardMenuForRole } from "@/lib/dashboard-navigation";
-
-const menuItems = [
-  { name: "ภาพรวม", href: "/dashboard" },
-  { name: "ออเดอร์", href: "/dashboard/orders" },
-  { name: "คิวครัว", href: "/dashboard/kitchen" },
-  { name: "พร้อมเสิร์ฟ", href: "/dashboard/ready" },
-  { name: "เมนูอาหาร", href: "/dashboard/menus" },
-  { name: "วัตถุดิบ", href: "/dashboard/ingredients" },
-  { name: "โต๊ะและ QR Code", href: "/dashboard/tables" },
-  { name: "ตัวเลือกเสริม", href: "/dashboard/addons" },
-  { name: "รายงาน", href: "/dashboard/reports" },
-];
 
 const paidStatuses = ["paid", "completed", "success", "successful"];
 
@@ -165,39 +152,14 @@ export default async function DashboardPage() {
 
   return (
     <main className="min-h-screen bg-zinc-100 lg:flex">
-      <aside className="bg-zinc-900 p-6 text-white lg:min-h-screen lg:w-72">
-        <div>
-          <p className="text-sm font-semibold tracking-[0.2em] text-orange-400">
-            SMART ORDER
-          </p>
-          <h1 className="mt-1 text-2xl font-bold">ระบบจัดการร้าน</h1>
-        </div>
-
-        <nav className="mt-8 space-y-2">
-          {dashboardMenuForRole(menuItems, role).map((item) => (
-            <Link
-              key={item.name}
-              href={item.href}
-              className={`block rounded-xl px-4 py-3 transition ${
-                item.name === "ภาพรวม"
-                  ? "bg-orange-500 font-semibold text-white"
-                  : "text-zinc-300 hover:bg-zinc-800 hover:text-white"
-              }`}
-            >
-              {item.name}
-            </Link>
-          ))}
-        </nav>
-
-        <LogoutButton />
-      </aside>
+      <DashboardSidebar role={role} activePath="/dashboard" />
 
       <section className="flex-1 p-6 sm:p-8">
         <div className="mx-auto max-w-7xl">
           <header>
             <p className="font-semibold text-orange-500">ภาพรวมร้านอาหาร</p>
             <h2 className="mt-1 text-3xl font-bold text-zinc-900">
-              Dashboard พนักงาน
+              Dashboard ร้านอาหาร
             </h2>
             <p className="mt-2 text-zinc-600">
               ตรวจสอบออเดอร์ คิวครัว เมนู และวัตถุดิบภายในร้าน

@@ -1,27 +1,15 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import LogoutButton from "@/components/logout-button";
+import DashboardSidebar from "@/components/dashboard-sidebar";
 import CatalogDeleteButton from "@/components/catalog-delete-button";
 import MenuAvailabilityForm from "@/components/menu-availability-form";
 import { requireDashboardContext, requireDashboardRole } from "@/lib/dashboard-auth";
 import { revalidatePath } from "next/cache";
 
-const menuItems = [
-  { name: "ภาพรวม", href: "/dashboard" },
-  { name: "ออเดอร์", href: "/dashboard/orders" },
-  { name: "คิวครัว", href: "/dashboard/kitchen" },
-  { name: "พร้อมเสิร์ฟ", href: "/dashboard/ready" },
-  { name: "เมนูอาหาร", href: "/dashboard/menus" },
-  { name: "วัตถุดิบ", href: "/dashboard/ingredients" },
-  { name: "โต๊ะและ QR Code", href: "/dashboard/tables" },
-  { name: "ตัวเลือกเสริม", href: "/dashboard/addons" },
-  { name: "รายงาน", href: "/dashboard/reports" },
-];
-
 export default async function MenusPage({ searchParams }: {
   searchParams: Promise<{ success?: string; error?: string; q?: string; category?: string; status?: string }>;
 }) {
-  const { db: supabase } = await requireDashboardContext(["admin"]);
+  const { db: supabase, role } = await requireDashboardContext(["admin"]);
   const { success, error: filterError, q = "", category = "", status = "" } = await searchParams;
 
   const [
@@ -95,35 +83,7 @@ export default async function MenusPage({ searchParams }: {
 
   return (
     <main className="min-h-screen bg-orange-50 lg:flex">
-      <aside className="w-full bg-zinc-900 p-6 text-white lg:min-h-screen lg:w-64">
-        <div>
-          <p className="text-sm font-semibold text-orange-400">
-            SMART ORDER
-          </p>
-
-          <h1 className="mt-1 text-2xl font-bold">
-            ระบบจัดการร้าน
-          </h1>
-        </div>
-
-        <nav className="mt-8 space-y-2">
-          {menuItems.map((item) => (
-            <Link
-              key={item.name}
-              href={item.href}
-              className={`block rounded-xl px-4 py-3 transition ${
-                item.name === "เมนูอาหาร"
-                  ? "bg-orange-500 font-semibold text-white"
-                  : "text-zinc-300 hover:bg-zinc-800 hover:text-white"
-              }`}
-            >
-              {item.name}
-            </Link>
-          ))}
-        </nav>
-
-        <LogoutButton />
-      </aside>
+      <DashboardSidebar role={role} activePath="/dashboard/menus" />
 
       <section className="min-w-0 flex-1 p-6 sm:p-8">
         <div className="mx-auto max-w-7xl">

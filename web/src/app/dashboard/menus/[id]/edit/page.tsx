@@ -1,9 +1,10 @@
 import Link from "next/link";
+import DashboardSidebar from "@/components/dashboard-sidebar";
 import MenuAddonPicker from "@/components/menu-addon-picker";
 import { notFound, redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
-import { requireDashboardRole } from "@/lib/dashboard-auth";
+import { requireDashboardContext, requireDashboardRole } from "@/lib/dashboard-auth";
 import OptionGroupsEditor from "./OptionGroupsEditor";
 import RecipeIngredientSelector from "./RecipeIngredientSelector";
 
@@ -22,21 +23,12 @@ export default async function EditMenuPage({
   params,
   searchParams,
 }: EditMenuPageProps) {
-  await requireDashboardRole(["admin"]);
+  const { db: supabase, role } = await requireDashboardContext(["admin"]);
   const { id } = await params;
   const query = await searchParams;
   const activeTab = ["info", "recipe", "options"].includes(query.tab ?? "")
     ? query.tab
     : "info";
-  const supabase = await createClient();
-
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-
-  if (!user) {
-    redirect("/login");
-  }
 
   const [
     { data: menu, error: menuError },
@@ -278,7 +270,9 @@ export default async function EditMenuPage({
   }));
 
   return (
-    <main className="min-h-screen bg-orange-50 px-6 py-10">
+    <div className="min-h-screen bg-orange-50 lg:flex">
+    <DashboardSidebar role={role} activePath="/dashboard/menus" />
+    <main className="min-w-0 flex-1 px-6 py-10">
       <div className="mx-auto max-w-3xl">
         <Link
           href="/dashboard/menus"
@@ -534,5 +528,6 @@ export default async function EditMenuPage({
         )}
       </div>
     </main>
+    </div>
   );
 }

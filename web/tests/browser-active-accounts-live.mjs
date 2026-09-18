@@ -94,8 +94,41 @@ async function run() {
     });
     return { status: response.status(), body: await response.json() };
   }
+  async function assertSidebar(page, role) {
+    const links = await page.locator('aside nav a').evaluateAll(nodes => nodes.map(node => ({
+      href: new URL(node.href).pathname, label: node.textContent.trim(),
+    })));
+    assert.equal(await page.locator('aside').count(), 1, `${role}: one shared sidebar`);
+    assert.equal(links.some(link => link.href === '/dashboard/users'), role === 'admin', role);
+    assert.equal(links.length, role === 'admin' ? 10 : role === 'staff' ? 3 : 1, role);
+  }
   try {
     const admin = await login('admin');
+    assert.equal((await admin.page.goto(`${base}/dashboard`)).status(), 200);
+    await assertSidebar(admin.page, 'admin');
+    assert.equal(await admin.page.getByRole('heading', { name: 'Dashboard พนักงาน' }).count(), 0);
+    await admin.page.reload();
+    await assertSidebar(admin.page, 'admin');
+    const freshAdminPage = await admin.context.newPage();
+    assert.equal((await freshAdminPage.goto(`${base}/dashboard`)).status(), 200);
+    await assertSidebar(freshAdminPage, 'admin');
+    await freshAdminPage.close();
+    pass('admin direct dashboard, refresh and new URL show user management immediately');
+    const menu = (await rows(service.from('menus').select('id').limit(1)))[0];
+    const ingredient = (await rows(service.from('ingredients').select('id').limit(1)))[0];
+    assert.ok(menu && ingredient);
+    for (const path of ['/dashboard', '/dashboard/orders', '/dashboard/kitchen', '/dashboard/ready',
+      '/dashboard/menus', '/dashboard/menus/new', `/dashboard/menus/${menu.id}/edit`,
+      `/dashboard/menus/${menu.id}/options`, '/dashboard/ingredients', '/dashboard/ingredients/new',
+      '/dashboard/ingredients/categories', `/dashboard/ingredients/${ingredient.id}/edit`,
+      '/dashboard/tables', '/dashboard/addons', '/dashboard/reports', '/dashboard/users']) {
+      assert.equal((await admin.page.goto(base + path)).status(), 200, path);
+      await assertSidebar(admin.page, 'admin');
+      await admin.page.setViewportSize({ width: 375, height: 812 });
+      await assertSidebar(admin.page, 'admin');
+      await admin.page.setViewportSize({ width: 1280, height: 800 });
+    }
+    pass('all admin dashboard pages share desktop and mobile sidebar');
     const usersResponse = await admin.page.goto(`${base}/dashboard/users`);
     assert.equal(usersResponse.status(), 200);
     await admin.page.getByRole('heading', { name: 'จัดการผู้ใช้งาน' }).waitFor();
@@ -106,18 +139,31 @@ async function run() {
     assert.ok(list.body.users.some(user => user.id === roleUser('staff').id));
     await admin.page.screenshot({ path: `${root}/users-desktop.png`, fullPage: true });
     await admin.page.setViewportSize({ width: 375, height: 812 });
+    await assertSidebar(admin.page, 'admin');
     assert.equal(await admin.page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), true);
     await admin.page.screenshot({ path: `${root}/users-mobile.png`, fullPage: true });
     pass('admin users page, list and mobile layout');
 
     const staff = await login('staff');
     const kitchen = await login('kitchen_staff');
+    await assertSidebar(staff.page, 'staff');
+    await assertSidebar(kitchen.page, 'kitchen_staff');
+    await staff.page.reload();
+    await kitchen.page.reload();
+    await assertSidebar(staff.page, 'staff');
+    await assertSidebar(kitchen.page, 'kitchen_staff');
+    await staff.page.setViewportSize({ width: 375, height: 812 });
+    await kitchen.page.setViewportSize({ width: 375, height: 812 });
+    await assertSidebar(staff.page, 'staff');
+    await assertSidebar(kitchen.page, 'kitchen_staff');
+    pass('staff and kitchen sidebar permissions persist on refresh and mobile');
     for (const [role, entry, allowed, denied] of [
       ['admin', admin, '/dashboard/users', null],
       ['staff', staff, '/dashboard/orders', '/dashboard/users'],
       ['kitchen_staff', kitchen, '/dashboard/kitchen', '/dashboard/orders'],
     ]) {
       assert.equal((await entry.page.goto(base + allowed)).status(), 200, role);
+      await assertSidebar(entry.page, role);
       if (denied) assert.equal((await entry.page.goto(base + denied)).status(), 404, role);
       if (role !== 'admin') assert.equal((await api(entry.context, 'GET')).status, 403);
     }
@@ -128,9 +174,25 @@ async function run() {
       role: 'kitchen_staff', isActive: true, fullName: `${state.prefix}_changed` });
     assert.equal(updated.status, 200, JSON.stringify(updated));
     assert.equal((await rows(service.from('profiles').select('role,full_name').eq('id', staffUser.id).single())).role, 'kitchen_staff');
+    await staff.page.goto(`${base}/dashboard/kitchen`);
+    await staff.page.getByRole('button', { name: 'ออกจากระบบ' }).click();
+    await staff.page.waitForURL('**/login');
+    await staff.page.getByLabel('อีเมล', { exact: true }).fill(staffUser.email);
+    await staff.page.getByLabel('รหัสผ่าน', { exact: true }).fill(staffUser.password);
+    await staff.page.getByRole('button', { name: 'เข้าสู่ระบบ', exact: true }).click();
+    await staff.page.waitForURL('**/dashboard/kitchen');
+    await assertSidebar(staff.page, 'kitchen_staff');
     updated = await api(admin.context, 'PATCH', { id: staffUser.id, action: 'update',
       role: 'staff', isActive: true, fullName: `${state.prefix}_staff` });
     assert.equal(updated.status, 200, JSON.stringify(updated));
+    await staff.page.getByRole('button', { name: 'ออกจากระบบ' }).click();
+    await staff.page.waitForURL('**/login');
+    await staff.page.getByLabel('อีเมล', { exact: true }).fill(staffUser.email);
+    await staff.page.getByLabel('รหัสผ่าน', { exact: true }).fill(staffUser.password);
+    await staff.page.getByRole('button', { name: 'เข้าสู่ระบบ', exact: true }).click();
+    await staff.page.waitForURL('**/dashboard');
+    await assertSidebar(staff.page, 'staff');
+    pass('sidebar follows changed role after logout and login');
     pass('role and name update through admin API');
 
     const editor = admin.page.locator('section[aria-label="รายชื่อผู้ใช้งาน"] article')
