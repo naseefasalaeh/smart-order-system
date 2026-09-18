@@ -2,6 +2,7 @@ import Link from "next/link";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { requireDashboardRole } from "@/lib/dashboard-auth";
 
 type NewIngredientPageProps = {
   searchParams: Promise<{ error?: string }>;
@@ -14,6 +15,7 @@ function newIngredientErrorRedirect(message: string): never {
 export default async function NewIngredientPage({
   searchParams,
 }: NewIngredientPageProps) {
+  await requireDashboardRole(["admin"]);
   const supabase = await createClient();
   const { error: errorMessage } = await searchParams;
 
@@ -38,6 +40,7 @@ export default async function NewIngredientPage({
 
   async function addIngredient(formData: FormData) {
     "use server";
+    await requireDashboardRole(["admin"]);
 
     const supabase = await createClient();
 

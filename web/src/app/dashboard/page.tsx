@@ -2,11 +2,14 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import LogoutButton from "@/components/logout-button";
 import { createClient } from "@/lib/supabase/server";
+import { requireDashboardRole } from "@/lib/dashboard-auth";
+import { dashboardMenuForRole } from "@/lib/dashboard-navigation";
 
 const menuItems = [
   { name: "ภาพรวม", href: "/dashboard" },
   { name: "ออเดอร์", href: "/dashboard/orders" },
   { name: "คิวครัว", href: "/dashboard/kitchen" },
+  { name: "พร้อมเสิร์ฟ", href: "/dashboard/ready" },
   { name: "เมนูอาหาร", href: "/dashboard/menus" },
   { name: "วัตถุดิบ", href: "/dashboard/ingredients" },
   { name: "โต๊ะและ QR Code", href: "/dashboard/tables" },
@@ -17,8 +20,7 @@ const menuItems = [
 const paidStatuses = ["paid", "completed", "success", "successful"];
 
 const statusLabels: Record<string, string> = {
-  pending: "รอยืนยัน",
-  confirmed: "ยืนยันแล้ว",
+  confirmed: "รอเริ่มทำ",
   preparing: "กำลังทำ",
   ready: "พร้อมเสิร์ฟ",
   completed: "เสร็จสิ้น",
@@ -26,7 +28,6 @@ const statusLabels: Record<string, string> = {
 };
 
 const statusColors: Record<string, string> = {
-  pending: "bg-yellow-100 text-yellow-700",
   confirmed: "bg-blue-100 text-blue-700",
   preparing: "bg-orange-100 text-orange-700",
   ready: "bg-green-100 text-green-700",
@@ -35,6 +36,7 @@ const statusColors: Record<string, string> = {
 };
 
 export default async function DashboardPage() {
+  await requireDashboardRole(["admin", "staff"]);
   const supabase = await createClient();
 
   const {
@@ -42,6 +44,7 @@ export default async function DashboardPage() {
   } = await supabase.auth.getUser();
 
   if (!user) redirect("/login");
+  const { data: profile } = await supabase.from("profiles").select("role").eq("id", user.id).maybeSingle();
 
   // จุดเริ่มต้นและสิ้นสุดของวันนี้ในประเทศไทย แล้วแปลงเป็น UTC สำหรับค้นฐานข้อมูล
   const now = new Date();
@@ -181,7 +184,7 @@ export default async function DashboardPage() {
         </div>
 
         <nav className="mt-8 space-y-2">
-          {menuItems.map((item) => (
+          {dashboardMenuForRole(menuItems, profile?.role).map((item) => (
             <Link
               key={item.name}
               href={item.href}

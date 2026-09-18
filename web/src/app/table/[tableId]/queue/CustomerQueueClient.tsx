@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-type QueueStatus = "pending" | "confirmed" | "preparing" | "ready";
+type QueueStatus = "confirmed" | "preparing" | "ready";
 
 type QueueOrder = {
   queueNumber: string;
@@ -13,29 +13,30 @@ type QueueOrder = {
 };
 
 const waitingStatuses = new Set<QueueStatus>([
-  "pending",
   "confirmed",
   "preparing",
 ]);
 
 const statusLabels: Record<QueueStatus, string> = {
-  pending: "รอยืนยัน",
   confirmed: "รับออเดอร์แล้ว",
   preparing: "กำลังทำ",
   ready: "พร้อมเสิร์ฟ",
 };
 
 const statusStyles: Record<QueueStatus, string> = {
-  pending: "bg-yellow-100 text-yellow-700",
   confirmed: "bg-blue-100 text-blue-700",
   preparing: "bg-orange-100 text-orange-700",
   ready: "bg-green-100 text-green-700",
 };
 
 export default function CustomerQueueClient({
+  tableId,
   tableNumber,
+  legacyReference,
 }: {
-  tableNumber: number;
+  tableId: number;
+  tableNumber: string;
+  legacyReference: string;
 }) {
   const [queue, setQueue] = useState<QueueOrder[]>([]);
   const [loading, setLoading] = useState(true);
@@ -62,12 +63,12 @@ export default function CustomerQueueClient({
   const expireSession = useCallback(() => {
     canContinuePollingRef.current = false;
     stopPolling(true);
-    window.localStorage.removeItem(`smart-order-session-${tableNumber}`);
+    window.localStorage.removeItem(`smart-order-session-id-${tableId}`);
     setQueue([]);
     setSessionExpired(true);
     setLoadFailed(false);
     setLoading(false);
-  }, [stopPolling, tableNumber]);
+  }, [stopPolling, tableId]);
 
   const loadQueue = useCallback(
     async (replaceInFlight = false) => {
@@ -85,8 +86,8 @@ export default function CustomerQueueClient({
       }
 
       const sessionToken = window.localStorage.getItem(
-        `smart-order-session-${tableNumber}`,
-      );
+        `smart-order-session-id-${tableId}`,
+      ) ?? window.localStorage.getItem(`smart-order-session-${legacyReference}`);
 
       if (!sessionToken) {
         expireSession();
@@ -100,7 +101,7 @@ export default function CustomerQueueClient({
         const response = await fetch("/api/customer-queue", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ tableNumber, sessionToken }),
+          body: JSON.stringify({ tableId, sessionToken }),
           cache: "no-store",
           signal: controller.signal,
         });
@@ -130,7 +131,7 @@ export default function CustomerQueueClient({
         }
       }
     },
-    [expireSession, tableNumber],
+    [expireSession, tableId, legacyReference],
   );
 
   useEffect(() => {
@@ -210,7 +211,7 @@ export default function CustomerQueueClient({
         <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-start">
           <div>
             <p className="font-semibold text-orange-500">SMART ORDER</p>
-            <h1 className="mt-1 text-3xl font-bold text-zinc-900">คิวร้าน</h1>
+            <h1 className="mt-1 text-3xl font-bold text-zinc-900">คิวร้าน · โต๊ะ {tableNumber}</h1>
             <p className="mt-2 text-sm text-zinc-500">
               อัปเดตอัตโนมัติทุก 5 วินาที
             </p>
@@ -218,13 +219,13 @@ export default function CustomerQueueClient({
 
           <div className="flex flex-wrap gap-2">
             <Link
-              href={`/table/${tableNumber}`}
+              href={`/table/id-${tableId}`}
               className="rounded-xl bg-orange-500 px-4 py-3 text-sm font-semibold text-white"
             >
               กลับไปหน้าเมนู
             </Link>
             <Link
-              href={`/table/${tableNumber}/orders`}
+              href={`/table/id-${tableId}/orders`}
               className="rounded-xl border border-zinc-300 bg-white px-4 py-3 text-sm font-semibold text-zinc-700"
             >
               ออเดอร์ของฉัน

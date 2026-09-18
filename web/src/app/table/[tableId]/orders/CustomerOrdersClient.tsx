@@ -24,7 +24,7 @@ type OrderItem = {
 
 type Order = {
   dining_type: "dine_in" | "takeaway";
-  id: number;
+  id: string;
   order_number: string | null;
   status: string;
   total_amount: number;
@@ -45,10 +45,12 @@ function formatPrice(value: number) {
   return new Intl.NumberFormat("th-TH", { maximumFractionDigits: 2 }).format(value);
 }
 
-export default function CustomerOrdersClient({ tableNumber }: { tableNumber: number }) {
+export default function CustomerOrdersClient({ tableId, tableNumber, legacyReference }: { tableId: number; tableNumber: string; legacyReference: string }) {
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [cancelMessage, setCancelMessage] = useState("");
+  const [cancellingId, setCancellingId] = useState<string | null>(null);
   const [connectionWarning, setConnectionWarning] = useState(false);
   const hasLoadedSuccessfullyRef = useRef(false);
   const isSessionActiveRef = useRef(true);
@@ -83,8 +85,8 @@ export default function CustomerOrdersClient({ tableNumber }: { tableNumber: num
     }
 
     const sessionToken = window.localStorage.getItem(
-      `smart-order-session-${tableNumber}`,
-    );
+      `smart-order-session-id-${tableId}`,
+    ) ?? window.localStorage.getItem(`smart-order-session-${legacyReference}`);
 
     if (!sessionToken) {
       isSessionActiveRef.current = false;
@@ -102,7 +104,7 @@ export default function CustomerOrdersClient({ tableNumber }: { tableNumber: num
       const response = await fetch("/api/customer-orders", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ tableNumber, sessionToken }),
+        body: JSON.stringify({ tableId, sessionToken }),
         cache: "no-store",
         signal: controller.signal,
       });
@@ -120,7 +122,7 @@ export default function CustomerOrdersClient({ tableNumber }: { tableNumber: num
         isSessionActiveRef.current = false;
         stopPolling();
         window.localStorage.removeItem(
-          `smart-order-session-${tableNumber}`,
+          `smart-order-session-id-${tableId}`,
         );
         setOrders([]);
         setError("");
@@ -152,7 +154,7 @@ export default function CustomerOrdersClient({ tableNumber }: { tableNumber: num
         setLoading(false);
       }
     }
-  }, [stopPolling, tableNumber]);
+  }, [stopPolling, tableId, legacyReference]);
 
   useEffect(() => {
     const canPoll = () =>
@@ -221,6 +223,26 @@ export default function CustomerOrdersClient({ tableNumber }: { tableNumber: num
     [orders],
   );
 
+  const cancelOrder = async (orderId: string) => {
+    if (cancellingId || !window.confirm("ยืนยันว่าต้องการยกเลิกออเดอร์นี้หรือไม่?")) return;
+    const sessionToken = window.localStorage.getItem(`smart-order-session-id-${tableId}`) ?? window.localStorage.getItem(`smart-order-session-${legacyReference}`);
+    if (!sessionToken) { setCancelMessage("ไม่พบรอบโต๊ะปัจจุบัน กรุณาโหลดหน้าใหม่"); return; }
+    setCancellingId(orderId);
+    setCancelMessage("");
+    try {
+      const response = await fetch(`/api/orders/${orderId}/cancel`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sessionToken, tableId }),
+      });
+      const result = await response.json();
+      if (!response.ok) { setCancelMessage(result.error ?? "ยกเลิกออเดอร์ไม่สำเร็จ"); return; }
+      setCancelMessage("ยกเลิกออเดอร์สำเร็จ คืนสต็อกแล้ว");
+      await loadOrders(true);
+    } catch {
+      setCancelMessage("เชื่อมต่อระบบไม่สำเร็จ กรุณาลองใหม่");
+    } finally { setCancellingId(null); }
+  };
+
   return (
     <main className="min-h-screen bg-zinc-100 px-5 py-8">
       <div className="mx-auto max-w-3xl">
@@ -231,7 +253,7 @@ export default function CustomerOrdersClient({ tableNumber }: { tableNumber: num
             <p className="mt-2 text-sm text-zinc-500">สถานะจะอัปเดตอัตโนมัติ</p>
           </div>
           <Link
-            href={`/table/${tableNumber}`}
+            href={`/table/id-${tableId}`}
             className="rounded-xl bg-orange-500 px-4 py-3 font-semibold text-white"
           >
             สั่งเพิ่ม
@@ -243,6 +265,7 @@ export default function CustomerOrdersClient({ tableNumber }: { tableNumber: num
             ขาดการเชื่อมต่อ กำลังรอเชื่อมต่อใหม่
           </div>
         )}
+        {cancelMessage && <p role="status" className="mt-4 rounded-xl bg-white p-4 text-zinc-800">{cancelMessage}</p>}
 
         {loading ? (
           <div className="mt-8 rounded-2xl bg-white p-8 text-center">กำลังโหลดออเดอร์...</div>
@@ -260,7 +283,7 @@ export default function CustomerOrdersClient({ tableNumber }: { tableNumber: num
                   <div>
                     <p className="font-bold">ออเดอร์ {order.order_number ?? order.id}</p><p className="text-sm text-orange-700">{order.dining_type === "takeaway" ? "กลับบ้าน (Takeaway)" : "ทานที่ร้าน"}</p>
                     <p className="mt-1 text-xs text-zinc-500">
-                      {new Date(order.created_at).toLocaleString("th-TH")}
+                      {new Date(order.created_at).toLocaleString("th-TH", { timeZone: "Asia/Bangkok" })}
                     </p>
                   </div>
                   <span className="rounded-full bg-orange-50 px-3 py-1 text-sm font-semibold text-orange-600">
@@ -291,6 +314,12 @@ export default function CustomerOrdersClient({ tableNumber }: { tableNumber: num
                   <span>รวมออเดอร์</span>
                   <span className="text-orange-500">{formatPrice(order.total_amount)} บาท</span>
                 </div>
+                {order.status === "confirmed" && <button type="button" disabled={cancellingId !== null}
+                  onClick={() => void cancelOrder(order.id)}
+                  className="mt-4 rounded-xl border border-red-300 px-4 py-2 font-semibold text-red-700 disabled:opacity-50">
+                  {cancellingId === order.id ? "กำลังยกเลิก..." : "ยกเลิกออเดอร์"}
+                </button>}
+                {order.status === "preparing" && <p className="mt-4 text-sm text-zinc-600">ร้านเริ่มทำอาหารแล้ว ไม่สามารถยกเลิกได้</p>}
               </article>
             ))}
 

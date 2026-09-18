@@ -4,11 +4,13 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import IngredientsClient from "./IngredientsClient";
 import OrderRealtimeRefresh from "@/components/order-realtime-refresh";
+import { requireDashboardRole } from "@/lib/dashboard-auth";
 
 const menuItems = [
   { name: "ภาพรวม", href: "/dashboard" },
   { name: "ออเดอร์", href: "/dashboard/orders" },
   { name: "คิวครัว", href: "/dashboard/kitchen" },
+  { name: "พร้อมเสิร์ฟ", href: "/dashboard/ready" },
   { name: "เมนูอาหาร", href: "/dashboard/menus" },
   { name: "วัตถุดิบ", href: "/dashboard/ingredients" },
   { name: "โต๊ะและ QR Code", href: "/dashboard/tables" },
@@ -19,6 +21,7 @@ const menuItems = [
 export default async function IngredientsPage({ searchParams }: {
   searchParams: Promise<{ success?: string }>;
 }) {
+  await requireDashboardRole(["admin"]);
   const { success } = await searchParams;
   const supabase = await createClient();
   const {
@@ -48,7 +51,6 @@ export default async function IngredientsPage({ searchParams }: {
     supabase
       .from("ingredient_categories")
       .select("id, name, is_active")
-      .eq("is_active", true)
       .order("display_order", { ascending: true })
       .order("name", { ascending: true }),
   ]);

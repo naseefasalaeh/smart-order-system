@@ -1,20 +1,10 @@
-import Link from "next/link";
 import { redirect } from "next/navigation";
-import LogoutButton from "@/components/logout-button";
+import DashboardSidebar from "@/components/dashboard-sidebar";
 import OrderRealtimeRefresh from "@/components/order-realtime-refresh";
 import UpdateOrderStatusButton from "@/components/update-order-status-button";
 import { createClient } from "@/lib/supabase/server";
-
-const menuItems = [
-  { name: "ภาพรวม", href: "/dashboard" },
-  { name: "ออเดอร์", href: "/dashboard/orders" },
-  { name: "คิวครัว", href: "/dashboard/kitchen" },
-  { name: "เมนูอาหาร", href: "/dashboard/menus" },
-  { name: "วัตถุดิบ", href: "/dashboard/ingredients" },
-  { name: "โต๊ะและ QR Code", href: "/dashboard/tables" },
-  { name: "ตัวเลือกเสริม", href: "/dashboard/addons" },
-  { name: "รายงาน", href: "/dashboard/reports" },
-];
+import { requireDashboardRole } from "@/lib/dashboard-auth";
+import type { ShopRole } from "@/lib/dashboard-auth";
 
 const statusLabels: Record<string, string> = {
   confirmed: "รอเริ่มทำ",
@@ -29,6 +19,7 @@ const statusColors: Record<string, string> = {
 };
 
 export default async function KitchenPage() {
+  await requireDashboardRole(["admin", "kitchen_staff"]);
   const supabase = await createClient();
 
   const {
@@ -38,6 +29,7 @@ export default async function KitchenPage() {
   if (!user) {
     redirect("/login");
   }
+  const { data: profile } = await supabase.from("profiles").select("role").eq("id", user.id).maybeSingle();
 
   const { data: orders, error } = await supabase
     .from("orders")
@@ -74,33 +66,7 @@ export default async function KitchenPage() {
     <main className="min-h-screen bg-orange-50 lg:flex">
       <OrderRealtimeRefresh channelName="staff-kitchen" />
 
-      <aside className="w-full bg-zinc-900 p-6 text-white lg:min-h-screen lg:w-64">
-        <p className="text-sm font-semibold text-orange-400">
-          SMART ORDER
-        </p>
-
-        <h1 className="mt-1 text-2xl font-bold">
-          ระบบจัดการร้าน
-        </h1>
-
-        <nav className="mt-8 space-y-2">
-          {menuItems.map((item) => (
-            <Link
-              key={item.name}
-              href={item.href}
-              className={`block rounded-xl px-4 py-3 transition ${
-                item.name === "คิวครัว"
-                  ? "bg-orange-500 font-semibold text-white"
-                  : "text-zinc-300 hover:bg-zinc-800 hover:text-white"
-              }`}
-            >
-              {item.name}
-            </Link>
-          ))}
-        </nav>
-
-        <LogoutButton />
-      </aside>
+      <DashboardSidebar role={profile?.role as ShopRole} activePath="/dashboard/kitchen" />
 
       <section className="flex-1 p-6 sm:p-8">
         <div className="mx-auto max-w-7xl">
@@ -130,7 +96,7 @@ export default async function KitchenPage() {
                 </p>
 
                 <p className="mt-1 text-sm text-zinc-400">
-                  ออเดอร์จะแสดงเมื่อพนักงานยืนยันแล้ว
+                  ออเดอร์จะแสดงเมื่อลูกค้าสั่งสำเร็จ
                 </p>
               </div>
             </section>

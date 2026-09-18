@@ -3,14 +3,17 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import AddonEditor from "@/components/addon-editor";
+import { requireDashboardRole } from "@/lib/dashboard-auth";
+import AddonControls from "@/components/addon-controls";
 
 export default async function AddonsPage({ searchParams }: { searchParams: Promise<{ q?: string; category?: string; status?: string }> }) {
+  await requireDashboardRole(["admin"]);
   const filters = await searchParams;
   const db = await createClient();
   const { data: { user } } = await db.auth.getUser();
   if (!user) redirect("/login");
   const [addons, ingredients, recipes] = await Promise.all([
-    db.from("addons").select("id,name,category,additional_price,is_available,max_quantity").order("name"),
+    db.from("addons").select("id,name,category,additional_price,is_available,max_quantity,display_order").order("display_order").order("name"),
     db.from("ingredients").select("id,name,unit").order("name"),
     db.from("addon_ingredients").select("addon_id,ingredient_id,quantity_required"),
   ]);
@@ -23,7 +26,7 @@ export default async function AddonsPage({ searchParams }: { searchParams: Promi
       <form className="my-5 flex flex-wrap gap-3"><input name="q" aria-label="ค้นหา" placeholder="ค้นหาตัวเลือก" defaultValue={filters.q} className="rounded border p-2" /><select name="category" aria-label="ประเภท" defaultValue={filters.category ?? ""}><option value="">ทุกประเภท</option>{addonCategories.map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}</select><select name="status" aria-label="สถานะ" defaultValue={filters.status ?? ""}><option value="">ทุกสถานะ</option><option value="active">เปิดขาย</option><option value="inactive">ปิดขาย</option></select><button>ค้นหา / กรอง</button></form>
       {addonCategories.filter((c) => !filters.category || c.value === filters.category).map((c) => <section key={c.value} className="mt-8"><h2 className="text-xl font-bold">{c.label}</h2>{(addons.data ?? []).filter((a) => a.category === c.value && (!filters.q || a.name.toLowerCase().includes(filters.q.toLowerCase())) && (!filters.status || a.is_available === (filters.status === "active"))).map((a) => <details key={a.id} className="mt-4 rounded-2xl bg-white p-6">
         <summary className="cursor-pointer font-semibold">{a.name} +{a.additional_price} บาท · {a.is_available ? "เปิดขาย" : "ปิดขาย"}</summary>
-        <div className="mt-5"><AddonEditor addon={a} ingredients={ingredients.data ?? []} recipe={(recipes.data ?? []).filter((r) => r.addon_id === a.id)} /></div>
+        <div className="mt-5"><AddonEditor addon={a} ingredients={ingredients.data ?? []} recipe={(recipes.data ?? []).filter((r) => r.addon_id === a.id)} /><AddonControls id={a.id} name={a.name} available={a.is_available} /></div>
       </details>)}</section>)}
     </>}
   </div></main>;

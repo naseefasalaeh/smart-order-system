@@ -5,8 +5,8 @@ import { useRouter } from "next/navigation";
 import { deleteCatalogItem } from "@/app/dashboard/catalog-delete-actions";
 import type { DeleteResult } from "@/lib/catalog-deletion";
 
-export default function CatalogDeleteButton({ id, name, kind }: {
-  id: number; name: string; kind: "menu" | "ingredient";
+export default function CatalogDeleteButton({ id, name, kind, className = "ml-3 inline-block" }: {
+  id: number; name: string; kind: "menu" | "ingredient"; className?: string;
 }) {
   const dialog = useRef<HTMLDialogElement>(null);
   const busy = useRef(false);
@@ -44,8 +44,8 @@ export default function CatalogDeleteButton({ id, name, kind }: {
   }
 
   return (
-    <span className="ml-3 inline-block text-left">
-      <button type="button" className="rounded-lg border border-red-300 px-4 py-2 text-sm font-semibold text-red-700 hover:bg-red-50"
+    <span className={className}>
+      <button type="button" className="min-h-11 rounded-lg border border-red-300 px-4 py-2 text-sm font-semibold text-red-700 hover:bg-red-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-600 focus-visible:ring-offset-2"
         onClick={() => { setConfirmation(""); setResult(null); dialog.current?.showModal(); }}>
         ลบ{label}
       </button>

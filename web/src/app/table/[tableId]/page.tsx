@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { loadCustomerMenuCatalog } from "@/lib/customer-menu-catalog";
-import { createClient } from "@/lib/supabase/server";
 import MenuClient from "./MenuClient";
+import { resolveTableReference } from "@/lib/table-reference";
 
 type TablePageProps = {
   params: Promise<{
@@ -11,12 +11,8 @@ type TablePageProps = {
 
 export default async function TablePage({ params }: TablePageProps) {
   const { tableId } = await params;
-  const supabase = await createClient();
 
-  // tableId ใน URL หมายถึง table_number
-  const tableNumber = Number(tableId);
-
-  if (!Number.isInteger(tableNumber) || tableNumber <= 0) {
+  if (!/^(id-)?[1-9]\d*$/.test(tableId)) {
     return (
       <main className="min-h-screen bg-zinc-100 px-5 py-16">
         <div className="mx-auto max-w-xl rounded-2xl bg-white p-8 text-center shadow-sm">
@@ -32,11 +28,10 @@ export default async function TablePage({ params }: TablePageProps) {
     );
   }
 
-  const { data: table, error: tableError } = await supabase
-    .from("restaurant_tables")
-    .select("id, table_number, status")
-    .eq("table_number", tableNumber)
-    .maybeSingle();
+  let table: Awaited<ReturnType<typeof resolveTableReference>> = null;
+  let tableError = false;
+  try { table = await resolveTableReference(tableId); }
+  catch (error) { tableError = true; console.error("Resolve table failed", error); }
 
   if (tableError) {
     console.error("โหลดข้อมูลโต๊ะไม่สำเร็จ", tableError);
@@ -79,6 +74,13 @@ export default async function TablePage({ params }: TablePageProps) {
     );
   }
 
+  if (table.status === "inactive") {
+    return <main className="min-h-screen bg-zinc-100 p-8"><div className="mx-auto max-w-xl rounded-2xl bg-white p-8 text-center shadow-sm">
+      <h1 className="text-2xl font-bold text-red-700">โต๊ะนี้ปิดใช้งาน</h1>
+      <p className="mt-3 text-zinc-600">กรุณาติดต่อพนักงานก่อนสั่งอาหาร</p>
+    </div></main>;
+  }
+
   let finalMenus = [] as Awaited<ReturnType<typeof loadCustomerMenuCatalog>>;
   let loadError = false;
 
@@ -111,14 +113,14 @@ export default async function TablePage({ params }: TablePageProps) {
             <div className="flex shrink-0 flex-col items-end gap-2 sm:flex-row sm:items-center">
               <div className="flex flex-wrap justify-end gap-2">
                 <Link
-                  href={`/table/${table.table_number}/orders`}
+                  href={`/table/id-${table.id}/orders`}
                   className="rounded-xl border border-orange-400 px-4 py-3 text-sm font-bold text-orange-300 transition hover:bg-orange-500 hover:text-white"
                 >
                   ดูออเดอร์ของฉัน
                 </Link>
 
                 <Link
-                  href={`/table/${table.table_number}/queue`}
+                  href={`/table/id-${table.id}/queue`}
                   className="rounded-xl border border-orange-400 px-4 py-3 text-sm font-bold text-orange-300 transition hover:bg-orange-500 hover:text-white"
                 >
                   ดูคิวร้าน
@@ -172,7 +174,8 @@ export default async function TablePage({ params }: TablePageProps) {
           <MenuClient
             menus={finalMenus}
             tableId={String(table.id)}
-            tableNumber={Number(table.table_number)}
+            tableNumber={String(table.table_number)}
+            legacyReference={tableId}
           />
         )}
       </section>

@@ -1,0 +1,383 @@
+{
+  "schema_version": 1,
+  "captured_at_utc": "2026-09-18T08:03:30.545Z",
+  "timezone": "Asia/Bangkok",
+  "hash_method": "SHA-256 of UTF-8 JSON.stringify(rows.map(row => JSON.stringify(row)).sort()); rows are PostgREST select(*) results. The inner strings are sorted lexicographically, preserving duplicates.",
+  "table_fingerprints": {
+    "menus": {
+      "count": 11,
+      "sha256": "71a38d7ef150245e3d767ba1b45bffc2ba07dbc3ea2f01ed249a7b12e5242d29"
+    },
+    "ingredients": {
+      "count": 11,
+      "sha256": "8a9ead9f2251a5666d13b32e28c5c5c1b6518cd786a72b345c0c95179d71a06e"
+    },
+    "menu_ingredients": {
+      "count": 17,
+      "sha256": "4e8f0181940411d87033616522b651f906366ac5584351720100b70fb2b8ef18"
+    },
+    "menu_options": {
+      "count": 121,
+      "sha256": "f300e397af7c5e6779f3707bc45629fe53a337c9ec500721e0a57a752aafa4d4"
+    },
+    "menu_option_groups": {
+      "count": 33,
+      "sha256": "62f92b6917daccdad9684e6a5369d9d7c6a806ec6aed7cb599991a0b46c7f380"
+    },
+    "menu_option_ingredients": {
+      "count": 44,
+      "sha256": "1bc291dc170c12f3370cd3ab50d9129bf599805a1439e891a7e85108ef705de8"
+    },
+    "addons": {
+      "count": 12,
+      "sha256": "8f2c5181c8ecf25a1e328b3f1798b242dcb78c927291e1595cca689c1cba23ed"
+    },
+    "addon_ingredients": {
+      "count": 14,
+      "sha256": "fae5f9fee255fc45c79e49c022185895c33dc1381bd3a0b1af0f18b61da7bbea"
+    },
+    "orders": {
+      "count": 70,
+      "sha256": "00b8b7512995dd763a4e19ec89e35acba7182d33c1c243b56a411f509c874c9b"
+    },
+    "order_items": {
+      "count": 77,
+      "sha256": "139a77142b1a84cabb58e0b36bb48b3731bc3dcc834563a86ea8c11f94068e93"
+    },
+    "order_item_options": {
+      "count": 48,
+      "sha256": "1b60e97cbd37bb722b3c75a53d4a52dd67386edb33fb4b7c3ef469f6d0bbde67"
+    },
+    "order_ingredient_usages": {
+      "count": 137,
+      "sha256": "38686acda3638f2356d6a056046a702e87f3539606db71f4c05cd6f37e20b1e9"
+    },
+    "restaurant_tables": {
+      "count": 6,
+      "sha256": "2ebf7a1fcc76db6be8ea66727a91cc21eb523e13d503baaba5dd2b7c5d81ee6c"
+    },
+    "restaurant_table_aliases": {
+      "count": 6,
+      "sha256": "2d9bb92e97afa7184f1cbc93ab019a4c14725f75c9a584eda5623a219a785d1f"
+    },
+    "dining_sessions": {
+      "count": 24,
+      "sha256": "c09eb8bed7513d8d3f87d2a194eaeea401ffc5c894936c9d19b0d585827cf528"
+    },
+    "profiles": {
+      "count": 1,
+      "sha256": "24b0a0b00ecec04e23c352251d078a7892739bac9f8b94d4b0c377b3ac507094"
+    },
+    "payments": {
+      "count": 52,
+      "sha256": "4aff49a1c4f2c76a58369863dddf7dbeb37a4ec3d99993b6acd6439b34e3fcb0"
+    }
+  },
+  "key_table_hashes": {
+    "orders": {
+      "count": 70,
+      "sha256": "00b8b7512995dd763a4e19ec89e35acba7182d33c1c243b56a411f509c874c9b"
+    },
+    "ingredients": {
+      "count": 11,
+      "sha256": "8a9ead9f2251a5666d13b32e28c5c5c1b6518cd786a72b345c0c95179d71a06e"
+    },
+    "order_ingredient_usages": {
+      "count": 137,
+      "sha256": "38686acda3638f2356d6a056046a702e87f3539606db71f4c05cd6f37e20b1e9"
+    }
+  },
+  "migration_history": {
+    "checked_at_utc": "2026-09-18T08:03:30.545Z",
+    "local_remote_match": true,
+    "versions": [
+      "20260829000000",
+      "20260901000000",
+      "20260901120000",
+      "20260902170000",
+      "20260902171000",
+      "20260909120000",
+      "20260914170000",
+      "20260914171000",
+      "20260915010000",
+      "20260915093000",
+      "20260915123000",
+      "20260916160000",
+      "20260916161000",
+      "20260916162000",
+      "20260916163000",
+      "20260917120000",
+      "20260917121000"
+    ],
+    "latest": "20260917121000"
+  },
+  "protected_orders_hash_method": "SHA-256 of recursively key-sorted JSON containing the order row and its item, option, usage and payment rows; each child array sorted by ID.",
+  "protected_orders": [
+    {
+      "order_number": 94,
+      "order_id": "8175aa10-d1ec-4e31-815f-a9ae44d1aedd",
+      "status": "completed",
+      "stock_deducted": true,
+      "created_at": "2026-09-15T05:21:26.378114+00:00",
+      "updated_at": "2026-09-15T05:22:16.132125+00:00",
+      "row_counts": {
+        "items": 2,
+        "options": 3,
+        "usages": 4,
+        "payments": 1
+      },
+      "bundle_sha256": "d1e88012b7176b1c390f6ba866c1668ad5ce6136d03f5746114ee0cf028b4310"
+    },
+    {
+      "order_number": 95,
+      "order_id": "b79b9569-fff6-4cff-811e-449e5ba55c1b",
+      "status": "completed",
+      "stock_deducted": true,
+      "created_at": "2026-09-15T05:21:44.751107+00:00",
+      "updated_at": "2026-09-15T05:22:07.818376+00:00",
+      "row_counts": {
+        "items": 1,
+        "options": 1,
+        "usages": 2,
+        "payments": 1
+      },
+      "bundle_sha256": "689edb9281820a030525e1fa8c4843a57e8cb6c2e0fe989f96f7b71ea4c34bd9"
+    },
+    {
+      "order_number": 105,
+      "order_id": "a12c705e-af0c-4cb7-910a-7e4e83f3e04c",
+      "status": "completed",
+      "stock_deducted": true,
+      "created_at": "2026-09-17T01:02:46.39743+00:00",
+      "updated_at": "2026-09-17T01:04:53.461675+00:00",
+      "row_counts": {
+        "items": 2,
+        "options": 5,
+        "usages": 5,
+        "payments": 1
+      },
+      "bundle_sha256": "558438809adb1dc81cadc89fb788f07398e5f8f3513281d48707acc2147b53a3"
+    }
+  ],
+  "stock_current": [
+    {
+      "id": 1,
+      "name": "เนื้อไก่",
+      "stock_quantity": 1170,
+      "minimum_stock": 400,
+      "unit": "กรัม",
+      "category_id": 1,
+      "updated_at": "2026-09-15T04:47:58.465277+00:00"
+    },
+    {
+      "id": 2,
+      "name": "พริก",
+      "stock_quantity": 500,
+      "minimum_stock": 50,
+      "unit": "กรัม",
+      "category_id": 2,
+      "updated_at": "2026-09-15T03:37:20.329+00:00"
+    },
+    {
+      "id": 3,
+      "name": "ใบกะเพรา",
+      "stock_quantity": 250,
+      "minimum_stock": 30,
+      "unit": "กรัม",
+      "category_id": 2,
+      "updated_at": "2026-09-15T04:47:58.465277+00:00"
+    },
+    {
+      "id": 8,
+      "name": "ไข่ไก่",
+      "stock_quantity": 27,
+      "minimum_stock": 5,
+      "unit": "ฟอง",
+      "category_id": 4,
+      "updated_at": "2026-09-15T04:47:58.465277+00:00"
+    },
+    {
+      "id": 11,
+      "name": "กุ้ง",
+      "stock_quantity": 1000,
+      "minimum_stock": 200,
+      "unit": "กรัม",
+      "category_id": 1,
+      "updated_at": "2026-09-17T00:32:27.069+00:00"
+    },
+    {
+      "id": 20,
+      "name": "ข้าวสวย",
+      "stock_quantity": 4400,
+      "minimum_stock": 1000,
+      "unit": "กรัม",
+      "category_id": 3,
+      "updated_at": "2026-09-15T03:34:54.005+00:00"
+    },
+    {
+      "id": 22,
+      "name": "เนื้อวัว",
+      "stock_quantity": 500,
+      "minimum_stock": 200,
+      "unit": "กรัม",
+      "category_id": 1,
+      "updated_at": "2026-09-15T03:36:07.943+00:00"
+    },
+    {
+      "id": 24,
+      "name": "ปลาหมึก",
+      "stock_quantity": 1000,
+      "minimum_stock": 100,
+      "unit": "กรัม",
+      "category_id": 1,
+      "updated_at": "2026-09-15T03:37:01.133+00:00"
+    },
+    {
+      "id": 28,
+      "name": "กระเทียม",
+      "stock_quantity": 1000,
+      "minimum_stock": 100,
+      "unit": "กรัม",
+      "category_id": 2,
+      "updated_at": "2026-09-15T03:34:01.468+00:00"
+    },
+    {
+      "id": 33,
+      "name": "ขมิ้น",
+      "stock_quantity": 500,
+      "minimum_stock": 80,
+      "unit": "กรัม",
+      "category_id": 2,
+      "updated_at": "2026-09-15T03:34:28.978+00:00"
+    },
+    {
+      "id": 57,
+      "name": "ข่า",
+      "stock_quantity": 280,
+      "minimum_stock": 50,
+      "unit": "กรัม",
+      "category_id": 2,
+      "updated_at": "2026-09-15T04:41:04.229126+00:00"
+    }
+  ],
+  "changes_from_2026_09_16": {
+    "ingredients": {
+      "deleted_id": 4,
+      "changed_ids": [
+        1,
+        3,
+        8,
+        11,
+        20,
+        22
+      ],
+      "stock_deltas": [
+        {
+          "id": 1,
+          "before": 1270,
+          "current": 1170
+        },
+        {
+          "id": 3,
+          "before": 270,
+          "current": 250
+        },
+        {
+          "id": 8,
+          "before": 28,
+          "current": 27
+        },
+        {
+          "id": 20,
+          "before": 4700,
+          "current": 4400
+        },
+        {
+          "id": 22,
+          "before": 700,
+          "current": 500
+        }
+      ],
+      "category_change": {
+        "id": 11,
+        "before": 10,
+        "current": 1,
+        "updated_at_utc": "2026-09-17T00:32:27.069Z"
+      },
+      "deletion_event": {
+        "id": 4,
+        "deleted_at_utc": "2026-09-17T00:32:47.977911Z",
+        "stock_before_deletion": 8500
+      }
+    },
+    "order_ingredient_usages": {
+      "added_ids": [
+        213,
+        214,
+        215,
+        216,
+        217
+      ],
+      "removed_ids": [],
+      "changed_ids": [
+        2,
+        5,
+        8,
+        12,
+        17,
+        19,
+        22,
+        26,
+        30,
+        33,
+        36,
+        38,
+        41,
+        44,
+        47,
+        51,
+        56,
+        58,
+        60,
+        62,
+        64,
+        67,
+        69,
+        71,
+        73,
+        75,
+        77,
+        79,
+        82,
+        87,
+        88,
+        90,
+        92,
+        94,
+        96,
+        98,
+        102,
+        105,
+        119,
+        123,
+        127
+      ],
+      "changed_field": "ingredient_id: 4 -> null via FK ON DELETE SET NULL; quantity_used and snapshots retained"
+    },
+    "orders": {
+      "added_order_numbers": [
+        105
+      ],
+      "protected_94_95_equal_to_2026_09_16_row_snapshot": true
+    }
+  },
+  "interpretation": {
+    "prior_ingredients_md5": "c5d20496952d44d22a2660829cbe6873",
+    "prior_ingredients_hash_fully_explained": true,
+    "prior_usage_md5": "3430fd542875fdda0ccb4cfb74350bf8",
+    "prior_usage_hash_reproducible": false,
+    "prior_usage_reason": "No row-level snapshot exists for the interval represented by the earlier hash; restoration of the 41 detached ingredient IDs in a read-only calculation did not reproduce that MD5.",
+    "data_corruption_or_incomplete_test_cleanup_evidence": "none found",
+    "scope": "New reference point for the presently verified database state; it does not assert that earlier hashes match."
+  }
+}

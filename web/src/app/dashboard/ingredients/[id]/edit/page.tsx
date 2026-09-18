@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
+import { requireDashboardRole } from "@/lib/dashboard-auth";
 
 type EditIngredientPageProps = {
   params: Promise<{
@@ -20,6 +21,7 @@ export default async function EditIngredientPage({
   params,
   searchParams,
 }: EditIngredientPageProps) {
+  await requireDashboardRole(["admin"]);
   const { id } = await params;
   const { error: errorMessage } = await searchParams;
   const supabase = await createClient();
@@ -57,6 +59,7 @@ export default async function EditIngredientPage({
 
   async function updateIngredient(formData: FormData) {
     "use server";
+    await requireDashboardRole(["admin"]);
 
     const supabase = await createClient();
 

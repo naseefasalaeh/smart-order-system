@@ -31,7 +31,17 @@ export default function LoginPage() {
       return;
     }
 
-    router.push("/dashboard");
+    const { data: { user } } = await supabase.auth.getUser();
+    const { data: profile } = user
+      ? await supabase.from("profiles").select("role").eq("id", user.id).maybeSingle()
+      : { data: null };
+    if (!profile || !["admin", "staff", "kitchen_staff"].includes(profile.role)) {
+      await supabase.auth.signOut();
+      setErrorMessage("บัญชีนี้ไม่มีสิทธิ์เข้าใช้งาน");
+      setIsLoading(false);
+      return;
+    }
+    router.push(profile.role === "kitchen_staff" ? "/dashboard/kitchen" : "/dashboard");
     router.refresh();
   }
 

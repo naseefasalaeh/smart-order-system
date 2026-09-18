@@ -2,11 +2,11 @@ import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 type CustomerQueueBody = {
-  tableNumber?: number;
+  tableId?: number;
   sessionToken?: string;
 };
 
-const queueStatuses = ["pending", "confirmed", "preparing", "ready"];
+const queueStatuses = ["confirmed", "preparing", "ready"];
 const uuidPattern =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
@@ -26,12 +26,12 @@ export async function POST(request: Request) {
     return emptyResponse(400);
   }
 
-  const tableNumber = Number(body.tableNumber);
+  const tableId = Number(body.tableId);
   const sessionToken = String(body.sessionToken ?? "");
 
   if (
-    !Number.isInteger(tableNumber) ||
-    tableNumber <= 0 ||
+    !Number.isSafeInteger(tableId) ||
+    tableId <= 0 ||
     !uuidPattern.test(sessionToken)
   ) {
     return emptyResponse(400);
@@ -41,10 +41,10 @@ export async function POST(request: Request) {
     const supabase = createAdminClient();
     const { data: session, error: sessionError } = await supabase
       .from("dining_sessions")
-      .select("id, restaurant_tables!inner(table_number)")
+      .select("id")
       .eq("access_token", sessionToken)
       .eq("status", "active")
-      .eq("restaurant_tables.table_number", tableNumber)
+      .eq("table_id", tableId)
       .maybeSingle();
 
     if (sessionError) {

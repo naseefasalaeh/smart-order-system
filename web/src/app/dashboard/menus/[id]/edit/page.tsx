@@ -3,6 +3,7 @@ import MenuAddonPicker from "@/components/menu-addon-picker";
 import { notFound, redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
+import { requireDashboardRole } from "@/lib/dashboard-auth";
 import OptionGroupsEditor from "./OptionGroupsEditor";
 import RecipeIngredientSelector from "./RecipeIngredientSelector";
 
@@ -21,6 +22,7 @@ export default async function EditMenuPage({
   params,
   searchParams,
 }: EditMenuPageProps) {
+  await requireDashboardRole(["admin"]);
   const { id } = await params;
   const query = await searchParams;
   const activeTab = ["info", "recipe", "options"].includes(query.tab ?? "")
@@ -106,6 +108,7 @@ export default async function EditMenuPage({
 
   async function updateMenu(formData: FormData) {
     "use server";
+    await requireDashboardRole(["admin"]);
 
     const supabase = await createClient();
     const {
@@ -163,6 +166,7 @@ export default async function EditMenuPage({
 
   async function addIngredient(formData: FormData) {
     "use server";
+    await requireDashboardRole(["admin"]);
 
     const supabase = await createClient();
     const {
@@ -222,6 +226,7 @@ export default async function EditMenuPage({
 
   async function removeIngredient(formData: FormData) {
     "use server";
+    await requireDashboardRole(["admin"]);
 
     const supabase = await createClient();
     const {

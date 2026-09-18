@@ -1,12 +1,16 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import LogoutButton from "@/components/logout-button";
+import ReportsCharts from "@/components/reports-charts";
 import { createClient } from "@/lib/supabase/server";
+import { bangkokCurrentMonth, bangkokMonthRange } from "@/lib/bangkok-date";
+import { requireDashboardRole } from "@/lib/dashboard-auth";
 
 const menuItems = [
   { name: "ภาพรวม", href: "/dashboard" },
   { name: "ออเดอร์", href: "/dashboard/orders" },
   { name: "คิวครัว", href: "/dashboard/kitchen" },
+  { name: "พร้อมเสิร์ฟ", href: "/dashboard/ready" },
   { name: "เมนูอาหาร", href: "/dashboard/menus" },
   { name: "วัตถุดิบ", href: "/dashboard/ingredients" },
   { name: "โต๊ะและ QR Code", href: "/dashboard/tables" },
@@ -15,8 +19,7 @@ const menuItems = [
 ];
 
 const statusLabels: Record<string, string> = {
-  pending: "รอยืนยัน",
-  confirmed: "ยืนยันแล้ว",
+  confirmed: "รอเริ่มทำ",
   preparing: "กำลังทำ",
   ready: "พร้อมเสิร์ฟ",
   completed: "เสร็จสิ้น",
@@ -40,24 +43,12 @@ function formatCurrency(value: number) {
   }).format(value);
 }
 
-function getBangkokTodayRange() {
-  const bangkokOffset = 7 * 60 * 60 * 1000;
-  const bangkokNow = new Date(Date.now() + bangkokOffset);
-
-  const start =
-    Date.UTC(
-      bangkokNow.getUTCFullYear(),
-      bangkokNow.getUTCMonth(),
-      bangkokNow.getUTCDate()
-    ) - bangkokOffset;
-
-  return {
-    start: new Date(start).toISOString(),
-    end: new Date(start + 24 * 60 * 60 * 1000).toISOString(),
-  };
-}
-
-export default async function ReportsPage() {
+export default async function ReportsPage({ searchParams }: { searchParams: Promise<{ month?: string }> }) {
+  await requireDashboardRole(["admin"]);
+  const { month: requestedMonth } = await searchParams;
+  const month = bangkokMonthRange(requestedMonth ?? "") ? requestedMonth! : bangkokCurrentMonth();
+  const { start, end } = bangkokMonthRange(month)!;
+  const monthLabel = new Date(`${month}-15T12:00:00+07:00`).toLocaleDateString("th-TH", { timeZone: "Asia/Bangkok", month: "long", year: "numeric" });
   const supabase = await createClient();
 
   const {
@@ -68,11 +59,11 @@ export default async function ReportsPage() {
     redirect("/login");
   }
 
-  const { start, end } = getBangkokTodayRange();
-
   const [
     completedOrdersResult,
-    todayOrdersResult,
+    monthOrdersResult,
+    cancelledOrdersResult,
+    diningOrdersResult,
     paymentsResult,
     recentOrdersResult,
   ] = await Promise.all([
@@ -90,10 +81,13 @@ export default async function ReportsPage() {
           menu_name_snapshot,
           menus (
             name
-          )
+          ),
+          order_item_options(option_name,additional_price,quantity)
         )
       `)
       .eq("status", "completed")
+      .gte("updated_at", start)
+      .lt("updated_at", end)
       .order("created_at", { ascending: false }),
 
     supabase
@@ -101,6 +95,9 @@ export default async function ReportsPage() {
       .select("id", { count: "exact", head: true })
       .gte("created_at", start)
       .lt("created_at", end),
+
+    supabase.from("orders").select("id", { count: "exact", head: true }).eq("status", "cancelled").gte("updated_at", start).lt("updated_at", end),
+    supabase.from("orders").select("dining_type").gte("created_at", start).lt("created_at", end),
 
     supabase
       .from("payments")
@@ -113,6 +110,8 @@ export default async function ReportsPage() {
         paid_at,
         created_at
       `)
+      .gte("paid_at", start)
+      .lt("paid_at", end)
       .order("created_at", { ascending: false }),
 
     supabase
@@ -127,6 +126,8 @@ export default async function ReportsPage() {
           table_number
         )
       `)
+      .gte("created_at", start)
+      .lt("created_at", end)
       .order("created_at", { ascending: false })
       .limit(5),
   ]);
@@ -137,11 +138,15 @@ export default async function ReportsPage() {
 
   const pageError =
     completedOrdersResult.error ??
-    todayOrdersResult.error ??
+    monthOrdersResult.error ??
+    cancelledOrdersResult.error ??
+    diningOrdersResult.error ??
     paymentsResult.error ??
     recentOrdersResult.error;
 
-  const todayOrderCount = todayOrdersResult.count ?? 0;
+  const monthOrderCount = monthOrdersResult.count ?? 0;
+  const dineInCount = (diningOrdersResult.data ?? []).filter((order) => order.dining_type === "dine_in").length;
+  const takeawayCount = (diningOrdersResult.data ?? []).filter((order) => order.dining_type === "takeaway").length;
 
   const successfulPaymentStatuses = [
     "paid",
@@ -192,6 +197,7 @@ export default async function ReportsPage() {
       revenue: number;
     }
   > = {};
+  const addonSales = new Map<string, { name: string; quantity: number; revenue: number }>();
 
   paidCompletedOrders.forEach((order) => {
     order.order_items?.forEach((item) => {
@@ -211,12 +217,18 @@ export default async function ReportsPage() {
 
       menuSales[menuName].quantity += Number(item.quantity ?? 0);
       menuSales[menuName].revenue += Number(item.subtotal ?? 0);
+      item.order_item_options?.forEach((option) => {
+        const existing = addonSales.get(option.option_name) ?? { name: option.option_name, quantity: 0, revenue: 0 };
+        const quantity = Number(option.quantity) * Number(item.quantity);
+        existing.quantity += quantity;
+        existing.revenue += quantity * Number(option.additional_price);
+        addonSales.set(option.option_name, existing);
+      });
     });
   });
 
   const bestSellingMenus = Object.values(menuSales)
-    .sort((a, b) => b.quantity - a.quantity)
-    .slice(0, 5);
+    .sort((a, b) => b.quantity - a.quantity);
 
   const totalSales = paidCompletedPayments.reduce(
     (sum, payment) => sum + Number(payment.amount ?? 0),
@@ -254,6 +266,34 @@ export default async function ReportsPage() {
     (a, b) => b.amount - a.amount
   );
 
+  const [yearNumber, monthNumber] = month.split("-").map(Number);
+  const daysInMonth = new Date(Date.UTC(yearNumber, monthNumber, 0)).getUTCDate();
+  const daily = Array.from({ length: daysInMonth }, (_, index) => ({
+    date: `${month}-${String(index + 1).padStart(2, "0")}`,
+    label: String(index + 1), sales: 0, orders: 0,
+  }));
+  const dailyByDate = new Map(daily.map((day) => [day.date, day]));
+  paidCompletedPayments.forEach((payment) => {
+    const day = dailyByDate.get(bangkokDateKey(payment.paid_at ?? payment.created_at));
+    if (day) { day.sales += Number(payment.amount ?? 0); day.orders += 1; }
+  });
+  const cash = paymentMethods.filter((item) => item.method === "cash");
+  const qr = paymentMethods.filter((item) => item.method === "qr" || item.method === "qr_code");
+  const other = paymentMethods.filter((item) => !["cash", "qr", "qr_code"].includes(item.method));
+  const summarize = (items: typeof paymentMethods) => ({
+    count: items.reduce((sum, item) => sum + item.count, 0),
+    amount: items.reduce((sum, item) => sum + item.amount, 0),
+  });
+  const paymentChart = [
+    { label: "เงินสด", ...summarize(cash), color: "#f97316" },
+    { label: "QR Code", ...summarize(qr), color: "#18181b" },
+    ...(other.length ? [{ label: "ช่องทางอื่น", ...summarize(other), color: "#a1a1aa" }] : []),
+  ];
+  const diningChart = [
+    { label: "ทานที่ร้าน", count: dineInCount, color: "#f97316" },
+    { label: "กลับบ้าน", count: takeawayCount, color: "#18181b" },
+  ];
+
   return (
     <main className="min-h-screen bg-orange-50 lg:flex">
       <aside className="w-full bg-zinc-900 p-6 text-white lg:min-h-screen lg:w-64">
@@ -284,7 +324,7 @@ export default async function ReportsPage() {
         <LogoutButton />
       </aside>
 
-      <section className="flex-1 p-6 sm:p-8">
+      <section className="min-w-0 flex-1 p-6 sm:p-8">
         <div className="mx-auto max-w-7xl">
           <header>
             <p className="font-semibold text-orange-500">
@@ -296,9 +336,15 @@ export default async function ReportsPage() {
             </h2>
 
             <p className="mt-2 text-zinc-600">
-              ภาพรวมยอดขาย ออเดอร์ และเมนูขายดีของร้าน
+              รายงานเดือน{monthLabel} · {new Date(start).toLocaleDateString("th-TH", { timeZone: "Asia/Bangkok" })} ถึง {new Date(Date.parse(end) - 1).toLocaleDateString("th-TH", { timeZone: "Asia/Bangkok" })}
             </p>
           </header>
+
+          <form action="/dashboard/reports" className="mt-5 flex flex-wrap items-end gap-3 rounded-xl bg-white p-4 shadow-sm">
+            <label className="font-medium text-zinc-700">เลือกเดือนและปี <input type="month" name="month" defaultValue={month} className="ml-2 rounded-lg border border-zinc-300 px-3 py-2" /></label>
+            <button className="rounded-lg bg-orange-500 px-4 py-2 font-semibold text-white">ดูรายงาน</button>
+            <Link href="/dashboard/reports" className="rounded-lg border border-zinc-300 px-4 py-2">กลับเดือนปัจจุบัน</Link>
+          </form>
 
           {pageError ? (
             <div className="mt-8 rounded-2xl bg-red-50 p-6 text-red-700 shadow-sm">
@@ -351,17 +397,28 @@ export default async function ReportsPage() {
 
                 <article className="rounded-2xl bg-white p-6 shadow-sm">
                   <p className="text-sm font-medium text-zinc-500">
-                    ออเดอร์วันนี้
+                    ออเดอร์เดือนนี้
                   </p>
 
                   <p className="mt-3 text-3xl font-bold text-zinc-900">
-                    {todayOrderCount}
+                    {monthOrderCount}
                   </p>
 
                   <p className="mt-2 text-sm text-zinc-400">
                     รวมทุกสถานะ
                   </p>
                 </article>
+              </section>
+              <ReportsCharts days={daily} menus={bestSellingMenus.map((menu) => ({ name: menu.name, quantity: menu.quantity }))}
+                payments={paymentChart} dining={diningChart} />
+              <section className="mt-6 rounded-2xl bg-white p-6 shadow-sm">
+                <h3 className="text-xl font-bold">Add-on ที่ขายในเดือนนี้</h3>
+                <p className="mt-1 text-sm text-zinc-500">ชื่อและราคาอิง snapshot ณ เวลาสั่ง แม้ตัวเลือกถูกลบแล้ว</p>
+                {[...addonSales.values()].length ? <ul className="mt-4 space-y-2">{[...addonSales.values()].sort((a,b) => b.quantity-a.quantity).map((addon) => <li key={addon.name} className="flex justify-between rounded-lg bg-zinc-50 p-3"><span>{addon.name} · {addon.quantity} รายการ</span><span>฿{formatCurrency(addon.revenue)}</span></li>)}</ul> : <p className="mt-4 text-zinc-500">ไม่มี Add-on ที่ขาย</p>}
+              </section>
+
+              <section className="mt-4 rounded-2xl bg-white p-5 text-zinc-700 shadow-sm">
+                <p>ทานที่ร้าน {dineInCount} ออเดอร์ · กลับบ้าน {takeawayCount} ออเดอร์ · ยกเลิก {cancelledOrdersResult.count ?? 0} ออเดอร์</p>
               </section>
 
               <section className="mt-6 grid gap-6 xl:grid-cols-2">
@@ -557,4 +614,12 @@ export default async function ReportsPage() {
       </section>
     </main>
   );
+}
+
+function bangkokDateKey(value: string) {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: "Asia/Bangkok", year: "numeric", month: "2-digit", day: "2-digit",
+  }).formatToParts(new Date(value));
+  const part = (type: string) => parts.find((item) => item.type === type)?.value ?? "";
+  return `${part("year")}-${part("month")}-${part("day")}`;
 }

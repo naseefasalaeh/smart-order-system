@@ -392,6 +392,10 @@ export async function POST(request: Request) {
         { status: 500 },
       );
     }
+
+    if (table.status === "inactive") {
+      return NextResponse.json({ error: "โต๊ะนี้ปิดใช้งาน กรุณาติดต่อพนักงาน" }, { status: 409 });
+    }
     if (menuIds.some((id) => !(menuIngredients ?? []).some((r) => Number(r.menu_id) === id))) {
       return NextResponse.json({ error: "สูตรพื้นฐานไม่ครบ กรุณาแจ้งพนักงาน" }, { status: 409 });
     }

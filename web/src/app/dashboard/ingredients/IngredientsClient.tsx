@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { Fragment, useMemo, useState } from "react";
 import CatalogDeleteButton from "@/components/catalog-delete-button";
 
 type IngredientCategory = {
@@ -31,6 +31,7 @@ export default function IngredientsClient({
 }) {
   const [search, setSearch] = useState("");
   const [categoryFilter, setCategoryFilter] = useState("all");
+  const [statusFilter, setStatusFilter] = useState("all");
 
   const filteredIngredients = useMemo(() => {
     const normalizedSearch = search.trim().toLocaleLowerCase("th-TH");
@@ -45,9 +46,11 @@ export default function IngredientsClient({
           ? ingredient.ingredient_categories === null
           : String(ingredient.ingredient_categories?.id) === categoryFilter);
 
-      return matchesSearch && matchesCategory;
-    });
-  }, [categoryFilter, ingredients, search]);
+      const stock = Number(ingredient.stock_quantity);
+      const status = stock <= 0 ? "out" : stock <= Number(ingredient.minimum_stock) ? "low" : "normal";
+      return matchesSearch && matchesCategory && (statusFilter === "all" || statusFilter === status);
+    }).sort((a,b) => (a.ingredient_categories?.name ?? "อื่น ๆ").localeCompare(b.ingredient_categories?.name ?? "อื่น ๆ", "th-TH") || a.name.localeCompare(b.name,"th-TH"));
+  }, [categoryFilter, ingredients, search, statusFilter]);
 
   return (
     <section className="mt-8 overflow-hidden rounded-2xl bg-white shadow-sm">
@@ -57,7 +60,7 @@ export default function IngredientsClient({
           แสดง {filteredIngredients.length} จาก {ingredients.length} รายการ
         </p>
 
-        <div className="mt-5 grid gap-3 md:grid-cols-[1fr_260px]">
+        <div className="mt-5 grid gap-3 md:grid-cols-[1fr_260px_200px]">
           <label>
             <span className="mb-2 block text-sm font-semibold text-zinc-700">
               ค้นหาวัตถุดิบ
@@ -69,6 +72,11 @@ export default function IngredientsClient({
               placeholder="พิมพ์ชื่อวัตถุดิบ"
               className="w-full rounded-xl border border-zinc-300 px-4 py-3 outline-none focus:border-orange-500 focus:ring-2 focus:ring-orange-100"
             />
+          </label>
+          <label><span className="mb-2 block text-sm font-semibold text-zinc-700">สถานะ</span>
+            <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)} className="w-full rounded-xl border border-zinc-300 bg-white px-4 py-3">
+              <option value="all">ทั้งหมด</option><option value="normal">ปกติ</option><option value="low">ใกล้หมด</option><option value="out">หมด</option>
+            </select>
           </label>
 
           <label>
@@ -111,14 +119,18 @@ export default function IngredientsClient({
               </tr>
             </thead>
             <tbody>
-              {filteredIngredients.map((ingredient) => {
+              {filteredIngredients.map((ingredient, index) => {
                 const stockQuantity = Number(ingredient.stock_quantity ?? 0);
                 const minimumStock = Number(ingredient.minimum_stock ?? 0);
-                const isLowStock = stockQuantity <= minimumStock;
+                const isOut = stockQuantity <= 0;
+                const isLowStock = !isOut && stockQuantity <= minimumStock;
+                const categoryName = ingredient.ingredient_categories?.name ?? "ยังไม่มีหมวด";
+                const previousCategory = filteredIngredients[index - 1]?.ingredient_categories?.name ?? "ยังไม่มีหมวด";
 
                 return (
+                  <Fragment key={ingredient.id}>
+                  {(index === 0 || categoryName !== previousCategory) && <tr className="bg-orange-50"><th colSpan={7} className="px-6 py-3 text-left font-semibold text-orange-800">{categoryName} · {filteredIngredients.filter((entry) => (entry.ingredient_categories?.name ?? "ยังไม่มีหมวด") === categoryName).length} รายการ</th></tr>}
                   <tr
-                    key={ingredient.id}
                     className="border-b border-zinc-100 last:border-0"
                   >
                     <td className="px-6 py-5 font-semibold text-zinc-900">
@@ -136,12 +148,12 @@ export default function IngredientsClient({
                     <td className="px-6 py-5">
                       <span
                         className={`inline-block rounded-full px-3 py-1 text-sm font-semibold ${
-                          isLowStock
+                          isOut || isLowStock
                             ? "bg-red-100 text-red-700"
                             : "bg-green-100 text-green-700"
                         }`}
                       >
-                        {isLowStock ? "ใกล้หมด" : "ปกติ"}
+                        {isOut ? "หมด" : isLowStock ? "ใกล้หมด" : "ปกติ"}
                       </span>
                     </td>
                     <td className="px-6 py-5 text-sm text-zinc-500">
@@ -162,6 +174,7 @@ export default function IngredientsClient({
                       {canDelete && <CatalogDeleteButton kind="ingredient" id={ingredient.id} name={ingredient.name} />}
                     </td>
                   </tr>
+                  </Fragment>
                 );
               })}
             </tbody>

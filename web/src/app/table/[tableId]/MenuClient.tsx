@@ -38,7 +38,8 @@ type Menu = {
 type MenuClientProps = {
   menus: Menu[];
   tableId: string;
-  tableNumber: number;
+  tableNumber: string;
+  legacyReference: string;
 };
 
 type CartItem = {
@@ -73,6 +74,7 @@ export default function MenuClient({
   menus,
   tableId,
   tableNumber,
+  legacyReference,
 }: MenuClientProps) {
   const router = useRouter();
   const [cart, setCart] = useState<CartItem[]>([]);
@@ -95,8 +97,8 @@ export default function MenuClient({
   const [successMessage, setSuccessMessage] = useState("");
   const [errorMessage, setErrorMessage] = useState("");
   function getOrCreateSessionToken() {
-    const storageKey = `smart-order-session-${tableNumber}`;
-    const existingToken = window.localStorage.getItem(storageKey);
+    const storageKey = `smart-order-session-id-${tableId}`;
+    const existingToken = window.localStorage.getItem(storageKey) ?? window.localStorage.getItem(`smart-order-session-${legacyReference}`);
     const uuidPattern =
       /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
     const token =
@@ -104,7 +106,7 @@ export default function MenuClient({
         ? existingToken
         : window.crypto.randomUUID();
 
-    if (existingToken !== token) {
+    if (window.localStorage.getItem(storageKey) !== token) {
       window.localStorage.setItem(storageKey, token);
     }
 
@@ -395,7 +397,7 @@ export default function MenuClient({
           : "สั่งอาหารสำเร็จ"
       );
 
-      router.push(`/table/${tableNumber}/orders`);
+      router.push(`/table/id-${tableId}/orders`);
     } catch (error) {
       setErrorMessage(
         error instanceof Error

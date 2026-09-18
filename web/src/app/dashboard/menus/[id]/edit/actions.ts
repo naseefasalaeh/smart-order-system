@@ -2,19 +2,14 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { createClient } from "@/lib/supabase/server";
+import { requireDashboardRole } from "@/lib/dashboard-auth";
 
 function editUrl(menuId: number, type: "error" | "success", message: string) {
   return `/dashboard/menus/${menuId}/edit?tab=options&${type}=${encodeURIComponent(message)}`;
 }
 
 async function requireStaff() {
-  const authClient = await createClient();
-  const {
-    data: { user },
-  } = await authClient.auth.getUser();
-  if (!user) redirect("/login");
-  return authClient;
+  return requireDashboardRole(["admin"]);
 }
 
 function positiveId(value: FormDataEntryValue | null) {

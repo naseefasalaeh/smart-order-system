@@ -3,11 +3,15 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import LogoutButton from "@/components/logout-button";
 import CatalogDeleteButton from "@/components/catalog-delete-button";
+import MenuAvailabilityForm from "@/components/menu-availability-form";
+import { requireDashboardRole } from "@/lib/dashboard-auth";
+import { revalidatePath } from "next/cache";
 
 const menuItems = [
   { name: "ภาพรวม", href: "/dashboard" },
   { name: "ออเดอร์", href: "/dashboard/orders" },
   { name: "คิวครัว", href: "/dashboard/kitchen" },
+  { name: "พร้อมเสิร์ฟ", href: "/dashboard/ready" },
   { name: "เมนูอาหาร", href: "/dashboard/menus" },
   { name: "วัตถุดิบ", href: "/dashboard/ingredients" },
   { name: "โต๊ะและ QR Code", href: "/dashboard/tables" },
@@ -16,9 +20,10 @@ const menuItems = [
 ];
 
 export default async function MenusPage({ searchParams }: {
-  searchParams: Promise<{ success?: string }>;
+  searchParams: Promise<{ success?: string; error?: string; q?: string; category?: string; status?: string }>;
 }) {
-  const { success } = await searchParams;
+  await requireDashboardRole(["admin"]);
+  const { success, error: filterError, q = "", category = "", status = "" } = await searchParams;
   const supabase = await createClient();
 
   const {
@@ -33,6 +38,8 @@ export default async function MenusPage({ searchParams }: {
   const [
     { data: menus, error: menusError },
     { data: categories, error: categoriesError },
+    { data: recipes, error: recipesError },
+    { data: stock, error: stockError },
   ] = await Promise.all([
     supabase
       .from("menus")
@@ -52,9 +59,11 @@ export default async function MenusPage({ searchParams }: {
       .from("categories")
       .select("id, name")
       .order("name", { ascending: true }),
+    supabase.from("menu_ingredients").select("menu_id,ingredient_id,quantity_required"),
+    supabase.from("ingredients").select("id,name,stock_quantity"),
   ]);
 
-  const error = menusError || categoriesError;
+  const error = menusError || categoriesError || recipesError || stockError;
 
   const categoryMap = new Map(
     (categories ?? []).map((category) => [
@@ -62,6 +71,38 @@ export default async function MenusPage({ searchParams }: {
       category.name,
     ])
   );
+  const stockMap = new Map((stock ?? []).map((ingredient) => [ingredient.id, ingredient]));
+  const reasons = new Map<number, string>();
+  for (const menu of menus ?? []) {
+    const menuRecipes = (recipes ?? []).filter((recipe) => recipe.menu_id === menu.id);
+    if (!menuRecipes.length) reasons.set(menu.id, "ยังไม่มีสูตรพื้นฐาน");
+    else if (menuRecipes.some((recipe) => !stockMap.has(recipe.ingredient_id))) reasons.set(menu.id, "วัตถุดิบในสูตรไม่ครบ");
+    else if (menuRecipes.some((recipe) => Number(stockMap.get(recipe.ingredient_id)?.stock_quantity ?? 0) < Number(recipe.quantity_required))) reasons.set(menu.id, "วัตถุดิบในสูตรไม่เพียงพอ");
+  }
+  const visibleMenus = (menus ?? []).filter((menu) =>
+    (!q || menu.name.toLocaleLowerCase("th-TH").includes(q.trim().toLocaleLowerCase("th-TH"))) &&
+    (!category || String(menu.category_id) === category) &&
+    (!status || menu.is_available === (status === "available"))
+  ).sort((a,b) => (categoryMap.get(a.category_id) ?? "").localeCompare(categoryMap.get(b.category_id) ?? "", "th-TH") || a.name.localeCompare(b.name,"th-TH"));
+
+  async function toggleAvailability(formData: FormData) {
+    "use server";
+    const db = await requireDashboardRole(["admin"]);
+    const id = Number(formData.get("id"));
+    const available = formData.get("available") === "true";
+    if (!Number.isSafeInteger(id) || id <= 0) redirect("/dashboard/menus?error=" + encodeURIComponent("ข้อมูลเมนูไม่ถูกต้อง"));
+    if (available) {
+      const { data: base, error: baseError } = await db.from("menu_ingredients").select("ingredient_id,quantity_required").eq("menu_id", id);
+      if (baseError || !base?.length) redirect("/dashboard/menus?error=" + encodeURIComponent("เปิดขายไม่ได้: ยังไม่มีสูตรพื้นฐาน"));
+      const { data: ingredients, error: ingredientsError } = await db.from("ingredients").select("id,stock_quantity").in("id", base.map((row) => row.ingredient_id));
+      if (ingredientsError || base.some((row) => Number(ingredients?.find((item) => item.id === row.ingredient_id)?.stock_quantity ?? 0) < Number(row.quantity_required)))
+        redirect("/dashboard/menus?error=" + encodeURIComponent("เปิดขายไม่ได้: วัตถุดิบไม่เพียงพอ"));
+    }
+    const { error: updateError } = await db.from("menus").update({ is_available: available, updated_at: new Date().toISOString() }).eq("id", id);
+    if (updateError) { console.error("Toggle menu availability failed", updateError); redirect("/dashboard/menus?error=" + encodeURIComponent("เปลี่ยนสถานะการขายไม่สำเร็จ")); }
+    revalidatePath("/dashboard/menus");
+    revalidatePath("/table", "layout");
+  }
 
   return (
     <main className="min-h-screen bg-orange-50 lg:flex">
@@ -95,7 +136,7 @@ export default async function MenusPage({ searchParams }: {
         <LogoutButton />
       </aside>
 
-      <section className="flex-1 p-6 sm:p-8">
+      <section className="min-w-0 flex-1 p-6 sm:p-8">
         <div className="mx-auto max-w-7xl">
           <header className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
             <div>
@@ -121,6 +162,13 @@ export default async function MenusPage({ searchParams }: {
           </header>
 
           {success && <p role="status" className="mt-6 rounded-xl bg-green-50 p-4 text-green-700">{success}</p>}
+          {filterError && <p role="alert" className="mt-6 rounded-xl bg-red-50 p-4 text-red-700">{filterError}</p>}
+          <form className="mt-6 grid gap-3 rounded-xl bg-white p-4 shadow-sm sm:grid-cols-[1fr_180px_160px_auto]">
+            <input name="q" aria-label="ค้นหาชื่อเมนู" placeholder="ค้นหาชื่อเมนู" defaultValue={q} className="rounded-lg border border-zinc-300 px-3 py-2" />
+            <select name="category" aria-label="หมวดหมู่" defaultValue={category} className="rounded-lg border border-zinc-300 px-3 py-2"><option value="">ทุกหมวดหมู่</option>{(categories ?? []).map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select>
+            <select name="status" aria-label="สถานะการขาย" defaultValue={status} className="rounded-lg border border-zinc-300 px-3 py-2"><option value="">ทั้งหมด</option><option value="available">พร้อมขาย</option><option value="unavailable">ปิดขาย</option></select>
+            <button className="rounded-lg bg-orange-500 px-4 py-2 font-semibold text-white">ค้นหา / กรอง</button>
+          </form>
           {error ? (
             <div className="mt-8 rounded-2xl bg-red-50 p-6 text-red-700">
               ไม่สามารถโหลดข้อมูลเมนูได้ กรุณาลองใหม่
@@ -143,12 +191,12 @@ export default async function MenusPage({ searchParams }: {
                 </h3>
 
                 <p className="mt-1 text-sm text-zinc-500">
-                  มีเมนูทั้งหมด {menus.length} รายการ
+                  แสดง {visibleMenus.length} จาก {menus.length} รายการ
                 </p>
               </div>
 
               <div className="overflow-x-auto">
-                <table className="w-full min-w-[850px] text-left">
+                <table className="w-full min-w-[980px] text-left">
                   <thead>
                     <tr className="border-b border-zinc-200 bg-zinc-50 text-sm text-zinc-500">
                       <th className="px-6 py-4 font-medium">
@@ -171,16 +219,16 @@ export default async function MenusPage({ searchParams }: {
                         อัปเดตล่าสุด
                       </th>
 
-                      <th className="px-6 py-4 text-right font-medium">
+                      <th className="min-w-[250px] px-6 py-4 text-right font-medium">
                         จัดการ
                       </th>
                     </tr>
                   </thead>
 
-                  <tbody>
-                    {menus.map((menu) => (
+                    {visibleMenus.map((menu, index) => (
+                      <tbody key={menu.id}>
+                      {(index === 0 || menu.category_id !== visibleMenus[index - 1].category_id) && <tr className="bg-orange-50"><th colSpan={6} className="px-6 py-3 text-left font-semibold text-orange-800">{categoryMap.get(menu.category_id) ?? "ไม่ระบุหมวดหมู่"} · {visibleMenus.filter((entry) => entry.category_id === menu.category_id).length} รายการ</th></tr>}
                       <tr
-                        key={menu.id}
                         className="border-b border-zinc-100 last:border-0"
                       >
                         <td className="px-6 py-5">
@@ -218,6 +266,7 @@ export default async function MenusPage({ searchParams }: {
                               ? "เปิดขาย"
                               : "ปิดขาย"}
                           </span>
+                          {reasons.get(menu.id) && <p className="mt-1 text-xs text-red-700">{reasons.get(menu.id)}</p>}
                         </td>
 
                         <td className="px-6 py-5 text-sm text-zinc-500">
@@ -230,18 +279,20 @@ export default async function MenusPage({ searchParams }: {
                             : "-"}
                         </td>
 
-                        <td className="px-6 py-5 text-right">
-                          <Link
-                            href={`/dashboard/menus/${menu.id}/edit`}
-                            className="inline-block rounded-lg border border-orange-300 px-4 py-2 text-sm font-semibold text-orange-600 transition hover:bg-orange-50"
-                          >
-                            แก้ไข
-                          </Link>
-                          {canDelete === true && <CatalogDeleteButton kind="menu" id={Number(menu.id)} name={menu.name} />}
+                        <td className="min-w-[250px] px-6 py-5">
+                          <div aria-label={`จัดการเมนู ${menu.name}`} className="flex flex-wrap items-center justify-end gap-2">
+                            <Link
+                              href={`/dashboard/menus/${menu.id}/edit`}
+                              className="inline-flex min-h-11 items-center justify-center rounded-lg border border-orange-300 px-4 py-2 text-sm font-semibold text-orange-700 transition hover:bg-orange-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-500 focus-visible:ring-offset-2"
+                            >แก้ไข</Link>
+                            <MenuAvailabilityForm id={menu.id} available={menu.is_available}
+                              disabled={!menu.is_available && reasons.has(menu.id)} action={toggleAvailability} />
+                            {canDelete === true && <CatalogDeleteButton kind="menu" id={Number(menu.id)} name={menu.name} className="inline-block text-left" />}
+                          </div>
                         </td>
                       </tr>
+                      </tbody>
                     ))}
-                  </tbody>
                 </table>
               </div>
             </section>

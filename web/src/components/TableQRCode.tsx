@@ -52,10 +52,10 @@ export default function TableQRCode({
         <img
           src={qrCodeUrl}
           alt={`QR Code โต๊ะ ${tableNumber}`}
-          className="h-48 w-48 rounded-lg border border-zinc-200 bg-white p-2"
+          className="h-36 w-36 rounded-lg border border-zinc-200 bg-white p-2"
         />
       ) : (
-        <div className="flex h-48 w-48 items-center justify-center rounded-lg bg-zinc-100 text-sm text-zinc-500">
+        <div className="flex h-36 w-36 items-center justify-center rounded-lg bg-zinc-100 text-sm text-zinc-500">
           กำลังสร้าง QR Code...
         </div>
       )}
@@ -64,7 +64,7 @@ export default function TableQRCode({
         type="button"
         onClick={downloadQRCode}
         disabled={!qrCodeUrl}
-        className="mt-3 rounded-lg border border-zinc-300 px-4 py-2 text-sm font-medium text-zinc-700 transition hover:bg-zinc-100 disabled:cursor-not-allowed disabled:opacity-50"
+        className="mt-3 min-h-11 rounded-lg border border-zinc-300 px-4 py-2 text-sm font-medium text-zinc-700 transition hover:bg-zinc-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-500 disabled:cursor-not-allowed disabled:opacity-50"
       >
         ดาวน์โหลด QR Code
       </button>

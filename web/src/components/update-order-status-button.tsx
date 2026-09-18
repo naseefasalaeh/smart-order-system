@@ -8,6 +8,7 @@ type UpdateOrderStatusButtonProps = {
   orderId: string;
   currentStatus: string;
   totalAmount: number;
+  canAdvanceStatus?: boolean;
 };
 
 type OrderAction = {
@@ -18,12 +19,6 @@ type OrderAction = {
 };
 
 const nextStatus: Record<string, OrderAction> = {
-  pending: {
-    status: "confirmed",
-    label: "ยืนยันออเดอร์",
-    loadingLabel: "กำลังยืนยัน...",
-    color: "bg-orange-500 hover:bg-orange-600",
-  },
   confirmed: {
     status: "preparing",
     label: "เริ่มทำอาหาร",
@@ -42,6 +37,7 @@ export default function UpdateOrderStatusButton({
   orderId,
   currentStatus,
   totalAmount,
+  canAdvanceStatus = true,
 }: UpdateOrderStatusButtonProps) {
   const router = useRouter();
   const supabase = createClient();
@@ -50,7 +46,8 @@ export default function UpdateOrderStatusButton({
   const [showPaymentOptions, setShowPaymentOptions] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
 
-  const action = nextStatus[currentStatus];
+  const action = canAdvanceStatus ? nextStatus[currentStatus] : undefined;
+  const canCancel = currentStatus === "confirmed";
 
   const updateStatus = async () => {
     if (!action || isUpdating) return;
@@ -58,27 +55,12 @@ export default function UpdateOrderStatusButton({
     setIsUpdating(true);
     setErrorMessage("");
 
-    const { data: updatedOrder, error } = await supabase
-      .from("orders")
-      .update({
-        status: action.status,
-        updated_at: new Date().toISOString(),
-      })
-      .eq("id", orderId)
-      .eq("status", currentStatus)
-      .select("id")
-      .maybeSingle();
+    const { error } = await supabase.rpc("advance_order_status", {
+      p_order_id: orderId, p_expected: currentStatus, p_next: action.status,
+    });
 
     if (error) {
-      setErrorMessage(error.message);
-      setIsUpdating(false);
-      return;
-    }
-
-    if (!updatedOrder) {
-      setErrorMessage(
-        "ไม่สามารถเปลี่ยนสถานะได้ เพราะสถานะออเดอร์อาจถูกเปลี่ยนไปแล้ว",
-      );
+      setErrorMessage(error.code === "P0001" ? "สถานะออเดอร์เปลี่ยนไปแล้ว กรุณาโหลดหน้าใหม่" : "เปลี่ยนสถานะไม่สำเร็จ กรุณาลองใหม่");
       setIsUpdating(false);
       router.refresh();
       return;
@@ -106,7 +88,7 @@ export default function UpdateOrderStatusButton({
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ currentStatus }),
+        body: JSON.stringify({}),
       });
 
       const result = (await response.json()) as {
@@ -142,7 +124,7 @@ export default function UpdateOrderStatusButton({
     });
 
     if (error) {
-      setErrorMessage(error.message);
+      setErrorMessage("รับชำระเงินไม่สำเร็จ กรุณาตรวจสถานะออเดอร์แล้วลองใหม่");
       setIsUpdating(false);
       return;
     }
@@ -219,23 +201,19 @@ export default function UpdateOrderStatusButton({
     );
   }
 
-  if (!action) return null;
-
-  const canCancel = ["pending", "confirmed", "preparing"].includes(
-    currentStatus,
-  );
+  if (!action && !canCancel) return null;
 
   return (
     <div>
       <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap">
-        <button
+        {action && <button
           type="button"
           onClick={updateStatus}
           disabled={isUpdating}
           className={`w-full rounded-xl px-4 py-3 font-semibold text-white transition disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto ${action.color}`}
         >
           {isUpdating ? action.loadingLabel : action.label}
-        </button>
+        </button>}
 
         {canCancel && (
           <button

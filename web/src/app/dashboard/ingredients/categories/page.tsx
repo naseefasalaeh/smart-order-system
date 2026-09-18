@@ -2,6 +2,7 @@ import Link from "next/link";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { requireDashboardRole } from "@/lib/dashboard-auth";
 
 type CategoriesPageProps = {
   searchParams: Promise<{ error?: string; success?: string }>;
@@ -20,6 +21,7 @@ function categorySuccessRedirect(message: string): never {
 }
 
 async function requireAuthenticatedClient() {
+  await requireDashboardRole(["admin"]);
   const supabase = await createClient();
   const {
     data: { user },
@@ -39,6 +41,11 @@ export default async function IngredientCategoriesPage({
     .select("id, name, display_order, is_active")
     .order("display_order", { ascending: true })
     .order("name", { ascending: true });
+  const { data: ingredientCategories, error: ingredientsError } = await supabase.from("ingredients").select("category_id");
+  const categoryCounts = new Map<number, number>();
+  for (const ingredient of ingredientCategories ?? []) {
+    if (ingredient.category_id !== null) categoryCounts.set(ingredient.category_id, (categoryCounts.get(ingredient.category_id) ?? 0) + 1);
+  }
 
   async function addCategory(formData: FormData) {
     "use server";
@@ -128,6 +135,27 @@ export default async function IngredientCategoriesPage({
     categorySuccessRedirect("บันทึกหมวดหมู่แล้ว");
   }
 
+  async function deleteCategory(formData: FormData) {
+    "use server";
+    const db = await requireAuthenticatedClient();
+    const categoryId = Number(formData.get("category_id"));
+    const destinationId = formData.get("destination_id") ? Number(formData.get("destination_id")) : null;
+    if (!Number.isSafeInteger(categoryId) || categoryId <= 0 ||
+      (destinationId !== null && (!Number.isSafeInteger(destinationId) || destinationId <= 0 || destinationId === categoryId))) {
+      categoryErrorRedirect("ข้อมูลหมวดหมู่ไม่ถูกต้อง");
+    }
+    const { error: deleteError } = await db.rpc("delete_ingredient_category_safely", {
+      p_id: categoryId, p_destination_id: destinationId,
+    });
+    if (deleteError) {
+      console.error("Delete ingredient category failed", deleteError);
+      categoryErrorRedirect("ลบหมวดไม่สำเร็จ หากมีวัตถุดิบกรุณาเลือกหมวดปลายทาง");
+    }
+    revalidatePath("/dashboard/ingredients/categories");
+    revalidatePath("/dashboard/ingredients");
+    categorySuccessRedirect("ย้ายวัตถุดิบและลบหมวดแล้ว");
+  }
+
   return (
     <main className="min-h-screen bg-orange-50 px-6 py-10">
       <div className="mx-auto max-w-4xl">
@@ -144,11 +172,11 @@ export default async function IngredientCategoriesPage({
             หมวดหมู่วัตถุดิบ
           </h1>
           <p className="mt-2 text-zinc-600">
-            จัดลำดับและเปิดหรือปิดหมวดหมู่ โดยไม่มีการลบข้อมูล
+            จัดลำดับ เปิดหรือปิด และย้ายวัตถุดิบก่อนลบหมวดหมู่
           </p>
         </header>
 
-        {(errorMessage || error) && (
+        {(errorMessage || error || ingredientsError) && (
           <div className="mt-6 rounded-xl bg-red-50 p-4 text-red-700">
             {errorMessage ?? "โหลดหมวดหมู่ไม่สำเร็จ กรุณาลองใหม่"}
           </div>
@@ -200,10 +228,10 @@ export default async function IngredientCategoriesPage({
           {(categories ?? []).map((category) => {
             const isOtherCategory = category.name.trim() === "อื่น ๆ";
             return (
+              <div key={category.id} className="rounded-2xl bg-white p-5 shadow-sm">
               <form
-                key={category.id}
                 action={updateCategory}
-                className="grid gap-4 rounded-2xl bg-white p-5 shadow-sm md:grid-cols-[1fr_130px_150px_auto] md:items-end"
+                className="grid gap-4 md:grid-cols-[1fr_130px_150px_auto] md:items-end"
               >
                 <input type="hidden" name="category_id" value={category.id} />
                 <label>
@@ -252,6 +280,17 @@ export default async function IngredientCategoriesPage({
                   บันทึก
                 </button>
               </form>
+              {!isOtherCategory && <form action={deleteCategory} className="mt-4 flex flex-wrap items-end gap-3 border-t pt-4">
+                <input type="hidden" name="category_id" value={category.id} />
+                <label className="text-sm font-medium text-zinc-700">ย้ายวัตถุดิบ {categoryCounts.get(category.id) ?? 0} รายการไป
+                  <select name="destination_id" required={(categoryCounts.get(category.id) ?? 0) > 0} className="ml-2 rounded-lg border border-zinc-300 p-2">
+                    <option value="">{(categoryCounts.get(category.id) ?? 0) > 0 ? "เลือกหมวดปลายทาง" : "ไม่มีวัตถุดิบ"}</option>
+                    {(categories ?? []).filter((other) => other.id !== category.id && other.is_active).map((other) => <option key={other.id} value={other.id}>{other.name}</option>)}
+                  </select>
+                </label>
+                <button className="rounded-lg border border-red-300 px-4 py-2 font-semibold text-red-700">ย้ายและลบหมวด</button>
+              </form>}
+              </div>
             );
           })}
         </section>

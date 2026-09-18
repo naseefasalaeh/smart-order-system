@@ -4,11 +4,15 @@ import LogoutButton from "@/components/logout-button";
 import OrderRealtimeRefresh from "@/components/order-realtime-refresh";
 import UpdateOrderStatusButton from "@/components/update-order-status-button";
 import { createClient } from "@/lib/supabase/server";
+import { bangkokDayRange, bangkokToday } from "@/lib/bangkok-date";
+import { requireDashboardRole } from "@/lib/dashboard-auth";
+import { dashboardMenuForRole } from "@/lib/dashboard-navigation";
 
 const menuItems = [
   { name: "ภาพรวม", href: "/dashboard" },
   { name: "ออเดอร์", href: "/dashboard/orders" },
   { name: "คิวครัว", href: "/dashboard/kitchen" },
+  { name: "พร้อมเสิร์ฟ", href: "/dashboard/ready" },
   { name: "เมนูอาหาร", href: "/dashboard/menus" },
   { name: "วัตถุดิบ", href: "/dashboard/ingredients" },
   { name: "โต๊ะและ QR Code", href: "/dashboard/tables" },
@@ -17,8 +21,7 @@ const menuItems = [
 ];
 
 const statusLabels: Record<string, string> = {
-  pending: "รอยืนยัน",
-  confirmed: "ยืนยันแล้ว",
+  confirmed: "รอเริ่มทำ",
   preparing: "กำลังทำ",
   ready: "พร้อมเสิร์ฟ",
   completed: "เสร็จสิ้น",
@@ -26,7 +29,6 @@ const statusLabels: Record<string, string> = {
 };
 
 const statusColors: Record<string, string> = {
-  pending: "bg-yellow-100 text-yellow-700",
   confirmed: "bg-blue-100 text-blue-700",
   preparing: "bg-orange-100 text-orange-700",
   ready: "bg-green-100 text-green-700",
@@ -36,8 +38,7 @@ const statusColors: Record<string, string> = {
 
 const currentOrderFilters = [
   { label: "ทั้งหมด", value: "" },
-  { label: "รอยืนยัน", value: "pending" },
-  { label: "ยืนยันแล้ว", value: "confirmed" },
+  { label: "รอเริ่มทำ", value: "confirmed" },
   { label: "กำลังทำ", value: "preparing" },
   { label: "พร้อมเสิร์ฟ", value: "ready" },
 ];
@@ -48,22 +49,29 @@ const historyOrderFilters = [
   { label: "ยกเลิก", value: "cancelled" },
 ];
 
-const currentStatuses = ["pending", "confirmed", "preparing", "ready"];
+const currentStatuses = ["confirmed", "preparing", "ready"];
 const historyStatuses = ["completed", "cancelled"];
 const allowedStatuses = [...currentStatuses, ...historyStatuses, "history"];
 
 type OrdersPageProps = {
   searchParams: Promise<{
     status?: string;
+    date?: string;
   }>;
 };
 
 export default async function OrdersPage({ searchParams }: OrdersPageProps) {
-  const { status } = await searchParams;
+  await requireDashboardRole(["admin", "staff"]);
+  const { status, date } = await searchParams;
   const activeStatus = status && allowedStatuses.includes(status) ? status : "";
   const isHistory =
     activeStatus === "history" || historyStatuses.includes(activeStatus);
   const visibleFilters = isHistory ? historyOrderFilters : currentOrderFilters;
+  const selectedDay = bangkokDayRange(date ?? "") ? date! : bangkokToday();
+  const dayRange = bangkokDayRange(selectedDay)!;
+  const dayLabel = new Date(`${selectedDay}T12:00:00+07:00`).toLocaleDateString("th-TH", {
+    timeZone: "Asia/Bangkok", weekday: "long", day: "numeric", month: "long", year: "numeric",
+  });
 
   const supabase = await createClient();
 
@@ -74,6 +82,9 @@ export default async function OrdersPage({ searchParams }: OrdersPageProps) {
   if (!user) {
     redirect("/login");
   }
+
+  const { data: profile } = await supabase.from("profiles").select("role").eq("id", user.id).maybeSingle();
+  const canAdvanceStatus = profile?.role === "admin";
 
   let ordersQuery = supabase.from("orders").select(`
     id,
@@ -105,8 +116,10 @@ export default async function OrdersPage({ searchParams }: OrdersPageProps) {
     )
   `);
 
-  if (activeStatus === "history") {
-    ordersQuery = ordersQuery.in("status", historyStatuses);
+  if (isHistory) {
+    ordersQuery = ordersQuery.gte("updated_at", dayRange.start).lt("updated_at", dayRange.end);
+    if (activeStatus === "history") ordersQuery = ordersQuery.in("status", historyStatuses);
+    else ordersQuery = ordersQuery.eq("status", activeStatus);
   } else if (activeStatus) {
     ordersQuery = ordersQuery.eq("status", activeStatus);
   } else {
@@ -116,6 +129,15 @@ export default async function OrdersPage({ searchParams }: OrdersPageProps) {
   const { data: orders, error } = await ordersQuery.order("created_at", {
     ascending: false,
   });
+  const dayCompletedResult = isHistory
+    ? await supabase.from("orders").select("id").eq("status", "completed").gte("updated_at", dayRange.start).lt("updated_at", dayRange.end)
+    : { data: [], error: null };
+  const completedIds = (dayCompletedResult.data ?? []).map((order) => order.id);
+  const paymentsResult = completedIds.length
+    ? await supabase.from("payments").select("order_id,amount,status").in("order_id", completedIds).eq("status", "paid")
+    : { data: [], error: null };
+  const paidByOrder = new Map((paymentsResult.data ?? []).map((payment) => [payment.order_id, Number(payment.amount)]));
+  const daySales = [...paidByOrder.values()].reduce((sum, amount) => sum + amount, 0);
 
   return (
     <main className="min-h-screen bg-orange-50 lg:flex">
@@ -129,7 +151,7 @@ export default async function OrdersPage({ searchParams }: OrdersPageProps) {
         <h1 className="mt-1 text-2xl font-bold">ระบบจัดการร้าน</h1>
 
         <nav className="mt-8 space-y-2">
-          {menuItems.map((item) => (
+          {dashboardMenuForRole(menuItems, profile?.role).map((item) => (
             <Link
               key={item.name}
               href={item.href}
@@ -161,7 +183,7 @@ export default async function OrdersPage({ searchParams }: OrdersPageProps) {
             <p className="mt-2 text-zinc-600">
               {isHistory
                 ? "ดูรายการที่ชำระเงินเสร็จแล้วและรายการที่ถูกยกเลิก"
-                : "ตรวจสอบ ยืนยัน และติดตามสถานะออเดอร์ของลูกค้า"}
+                : "ตรวจสอบและติดตามสถานะออเดอร์ของลูกค้า"}
             </p>
           </header>
 
@@ -198,7 +220,7 @@ export default async function OrdersPage({ searchParams }: OrdersPageProps) {
                   key={item.label}
                   href={
                     item.value
-                      ? `/dashboard/orders?status=${item.value}`
+                       ? `/dashboard/orders?status=${item.value}${isHistory ? `&date=${selectedDay}` : ""}`
                       : "/dashboard/orders"
                   }
                   className={`rounded-xl px-4 py-2 font-medium transition ${
@@ -213,9 +235,22 @@ export default async function OrdersPage({ searchParams }: OrdersPageProps) {
             })}
           </div>
 
-          {error ? (
+          {isHistory && (
+            <div className="mt-5 rounded-2xl bg-white p-5 shadow-sm">
+              <form className="flex flex-wrap items-end gap-3" action="/dashboard/orders">
+                <input type="hidden" name="status" value={activeStatus} />
+                <label className="font-medium text-zinc-700">เลือกวันที่
+                  <input type="date" name="date" defaultValue={selectedDay} className="ml-3 rounded-lg border border-zinc-300 px-3 py-2" />
+                </label>
+                <button className="rounded-lg bg-orange-500 px-4 py-2 font-semibold text-white">ดูประวัติ</button>
+              </form>
+              <p className="mt-3 font-semibold text-zinc-800">{dayLabel}: {orders?.length ?? 0} ออเดอร์ · ยอดขายที่ชำระแล้ว {daySales.toLocaleString("th-TH")} บาท</p>
+            </div>
+          )}
+
+          {error || paymentsResult.error || dayCompletedResult.error ? (
             <div className="mt-6 rounded-2xl bg-red-50 p-6 text-red-700 shadow-sm">
-              ไม่สามารถโหลดออเดอร์ได้: {error.message}
+              ไม่สามารถโหลดประวัติออเดอร์ได้ กรุณาลองใหม่
             </div>
           ) : !orders || orders.length === 0 ? (
             <section className="mt-6 rounded-2xl bg-white p-6 shadow-sm">
@@ -254,7 +289,7 @@ export default async function OrdersPage({ searchParams }: OrdersPageProps) {
                         </h3>
 
                         <p className="mt-1 text-sm text-zinc-400">
-                          {new Date(order.created_at).toLocaleString("th-TH")}
+                          {new Date(order.created_at).toLocaleString("th-TH", { timeZone: "Asia/Bangkok" })}
                         </p>
                       </div>
 
@@ -333,11 +368,12 @@ export default async function OrdersPage({ searchParams }: OrdersPageProps) {
                         </p>
                       </div>
 
-                      <UpdateOrderStatusButton
+                      {!isHistory && <UpdateOrderStatusButton
                         orderId={order.id}
                         currentStatus={order.status}
                         totalAmount={Number(order.total_amount ?? 0)}
-                      />
+                        canAdvanceStatus={canAdvanceStatus}
+                      />}
                     </div>
                   </article>
                 );

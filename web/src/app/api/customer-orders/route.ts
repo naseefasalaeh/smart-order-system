@@ -2,31 +2,31 @@ import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 type CustomerOrdersBody = {
-  tableNumber?: number;
+  tableId?: number;
   sessionToken?: string;
 };
 
 export async function POST(request: Request) {
   try {
     const body = (await request.json()) as CustomerOrdersBody;
-    const tableNumber = Number(body.tableNumber);
+    const tableId = Number(body.tableId);
     const sessionToken = String(body.sessionToken ?? "");
 
-    if (!Number.isInteger(tableNumber) || tableNumber <= 0 || !sessionToken) {
+    if (!Number.isSafeInteger(tableId) || tableId <= 0 || !/^[0-9a-f-]{36}$/i.test(sessionToken)) {
       return NextResponse.json({ error: "ข้อมูลรอบโต๊ะไม่ถูกต้อง" }, { status: 400 });
     }
 
     const supabase = createAdminClient();
     const { data: session, error: sessionError } = await supabase
       .from("dining_sessions")
-      .select("id, status, restaurant_tables!inner(table_number)")
+      .select("id, status")
       .eq("access_token", sessionToken)
-      .eq("restaurant_tables.table_number", tableNumber)
+      .eq("table_id", tableId)
       .maybeSingle();
 
     if (sessionError) {
       return NextResponse.json(
-        { error: "โหลดรอบโต๊ะไม่สำเร็จ", details: sessionError.message },
+        { error: "โหลดรอบโต๊ะไม่สำเร็จ" },
         { status: 500 },
       );
     }
@@ -67,7 +67,7 @@ export async function POST(request: Request) {
 
     if (ordersError) {
       return NextResponse.json(
-        { error: "โหลดออเดอร์ไม่สำเร็จ", details: ordersError.message },
+        { error: "โหลดออเดอร์ไม่สำเร็จ" },
         { status: 500 },
       );
     }
@@ -94,7 +94,7 @@ export async function POST(request: Request) {
 
       if (closeError) {
         return NextResponse.json(
-          { error: "ปิดรอบโต๊ะไม่สำเร็จ", details: closeError.message },
+          { error: "ปิดรอบโต๊ะไม่สำเร็จ" },
           { status: 500 },
         );
       }
@@ -107,10 +107,10 @@ export async function POST(request: Request) {
 
     return NextResponse.json({ session, orders: activeOrders });
   } catch (error) {
+    console.error("Customer orders failed", error);
     return NextResponse.json(
       {
         error: "โหลดออเดอร์ไม่สำเร็จ",
-        details: error instanceof Error ? error.message : "Unknown error",
       },
       { status: 500 },
     );

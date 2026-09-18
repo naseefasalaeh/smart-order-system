@@ -5,7 +5,7 @@ import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { saveAddon } from "@/app/dashboard/addons/actions";
 
-export type Addon = { id: number; category: AddonCategory; name: string; additional_price: number; is_available: boolean; max_quantity: number };
+export type Addon = { id: number; category: AddonCategory; name: string; additional_price: number; is_available: boolean; max_quantity: number; display_order?: number };
 export type AddonIngredient = { id: number; name: string; unit: string };
 export type AddonRecipe = { ingredient_id: number; quantity_required: number };
 const input = "mt-1 w-full rounded-lg border border-zinc-300 bg-white p-2 text-zinc-900";
@@ -39,6 +39,7 @@ export default function AddonEditor({ addon, ingredients, recipe = [], onSaved }
       <label>ราคาเพิ่ม (บาท)<input className={input} name="price" type="number" required min="0" step="0.01" defaultValue={addon?.additional_price ?? 10} /></label>
       <label>จำนวนสูงสุดต่อจาน<input className={input} name="max_quantity" type="number" required min="1" max="3" defaultValue={addon?.max_quantity ?? 3} /></label>
     </div>
+    <label className="block">ลำดับการแสดง<input className={input} name="display_order" type="number" required min="0" step="1" defaultValue={addon?.display_order ?? 0} /></label>
     <label className="block"><input name="is_available" type="checkbox" defaultChecked={addon?.is_available ?? true} /> เปิดขาย</label>
     <fieldset className="space-y-3"><legend className="font-bold">สูตรต่อ 1 ตัวเลือก</legend>
       {rows.map((row) => <div key={row.key} className="flex items-end gap-2">
