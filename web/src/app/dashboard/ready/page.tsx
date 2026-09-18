@@ -1,13 +1,9 @@
-import { redirect } from "next/navigation";
 import DashboardSidebar from "@/components/dashboard-sidebar";
 import OrderRealtimeRefresh from "@/components/order-realtime-refresh";
-import { requireDashboardRole, type ShopRole } from "@/lib/dashboard-auth";
+import { requireDashboardContext } from "@/lib/dashboard-auth";
 
 export default async function ReadyPage() {
-  const db = await requireDashboardRole(["admin", "staff"]);
-  const { data: { user } } = await db.auth.getUser();
-  if (!user) redirect("/login");
-  const { data: profile } = await db.from("profiles").select("role").eq("id", user.id).maybeSingle();
+  const { db, role } = await requireDashboardContext(["admin", "staff"]);
 
   const { data: orders, error } = await db.from("orders").select(`
     id,order_number,dining_type,created_at,updated_at,note,
@@ -19,7 +15,7 @@ export default async function ReadyPage() {
   return (
     <main className="min-h-screen bg-orange-50 text-zinc-900 lg:flex">
       <OrderRealtimeRefresh channelName="staff-ready-orders" fallbackIntervalMs={5_000} pollWhenSubscribed />
-      <DashboardSidebar role={profile?.role as ShopRole} activePath="/dashboard/ready" />
+      <DashboardSidebar role={role} activePath="/dashboard/ready" />
       <section className="min-w-0 flex-1 p-6 sm:p-8">
         <div className="mx-auto max-w-7xl">
           <header>

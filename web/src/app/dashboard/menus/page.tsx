@@ -1,10 +1,9 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { createClient } from "@/lib/supabase/server";
 import LogoutButton from "@/components/logout-button";
 import CatalogDeleteButton from "@/components/catalog-delete-button";
 import MenuAvailabilityForm from "@/components/menu-availability-form";
-import { requireDashboardRole } from "@/lib/dashboard-auth";
+import { requireDashboardContext, requireDashboardRole } from "@/lib/dashboard-auth";
 import { revalidatePath } from "next/cache";
 
 const menuItems = [
@@ -22,18 +21,8 @@ const menuItems = [
 export default async function MenusPage({ searchParams }: {
   searchParams: Promise<{ success?: string; error?: string; q?: string; category?: string; status?: string }>;
 }) {
-  await requireDashboardRole(["admin"]);
+  const { db: supabase } = await requireDashboardContext(["admin"]);
   const { success, error: filterError, q = "", category = "", status = "" } = await searchParams;
-  const supabase = await createClient();
-
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-
-  if (!user) {
-    redirect("/login");
-  }
-  const { data: canDelete } = await supabase.rpc("is_catalog_admin");
 
   const [
     { data: menus, error: menusError },
@@ -287,7 +276,7 @@ export default async function MenusPage({ searchParams }: {
                             >แก้ไข</Link>
                             <MenuAvailabilityForm id={menu.id} available={menu.is_available}
                               disabled={!menu.is_available && reasons.has(menu.id)} action={toggleAvailability} />
-                            {canDelete === true && <CatalogDeleteButton kind="menu" id={Number(menu.id)} name={menu.name} className="inline-block text-left" />}
+                            <CatalogDeleteButton kind="menu" id={Number(menu.id)} name={menu.name} className="inline-block text-left" />
                           </div>
                         </td>
                       </tr>

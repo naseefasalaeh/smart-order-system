@@ -1,10 +1,8 @@
 import Link from "next/link";
-import { redirect } from "next/navigation";
 import LogoutButton from "@/components/logout-button";
 import ReportsCharts from "@/components/reports-charts";
-import { createClient } from "@/lib/supabase/server";
 import { bangkokCurrentMonth, bangkokMonthRange } from "@/lib/bangkok-date";
-import { requireDashboardRole } from "@/lib/dashboard-auth";
+import { requireDashboardContext } from "@/lib/dashboard-auth";
 
 const menuItems = [
   { name: "ภาพรวม", href: "/dashboard" },
@@ -44,21 +42,11 @@ function formatCurrency(value: number) {
 }
 
 export default async function ReportsPage({ searchParams }: { searchParams: Promise<{ month?: string }> }) {
-  await requireDashboardRole(["admin"]);
+  const { db: supabase } = await requireDashboardContext(["admin"]);
   const { month: requestedMonth } = await searchParams;
   const month = bangkokMonthRange(requestedMonth ?? "") ? requestedMonth! : bangkokCurrentMonth();
   const { start, end } = bangkokMonthRange(month)!;
   const monthLabel = new Date(`${month}-15T12:00:00+07:00`).toLocaleDateString("th-TH", { timeZone: "Asia/Bangkok", month: "long", year: "numeric" });
-  const supabase = await createClient();
-
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-
-  if (!user) {
-    redirect("/login");
-  }
-
   const [
     completedOrdersResult,
     monthOrdersResult,

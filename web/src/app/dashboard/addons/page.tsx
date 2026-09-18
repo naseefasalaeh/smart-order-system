@@ -1,17 +1,12 @@
 import { addonCategories } from "@/lib/addon-categories";
 import Link from "next/link";
-import { redirect } from "next/navigation";
-import { createClient } from "@/lib/supabase/server";
 import AddonEditor from "@/components/addon-editor";
-import { requireDashboardRole } from "@/lib/dashboard-auth";
+import { requireDashboardContext } from "@/lib/dashboard-auth";
 import AddonControls from "@/components/addon-controls";
 
 export default async function AddonsPage({ searchParams }: { searchParams: Promise<{ q?: string; category?: string; status?: string }> }) {
-  await requireDashboardRole(["admin"]);
+  const { db } = await requireDashboardContext(["admin"]);
   const filters = await searchParams;
-  const db = await createClient();
-  const { data: { user } } = await db.auth.getUser();
-  if (!user) redirect("/login");
   const [addons, ingredients, recipes] = await Promise.all([
     db.from("addons").select("id,name,category,additional_price,is_available,max_quantity,display_order").order("display_order").order("name"),
     db.from("ingredients").select("id,name,unit").order("name"),

@@ -1,10 +1,8 @@
 import Link from "next/link";
 import LogoutButton from "@/components/logout-button";
-import { redirect } from "next/navigation";
-import { createClient } from "@/lib/supabase/server";
 import IngredientsClient from "./IngredientsClient";
 import OrderRealtimeRefresh from "@/components/order-realtime-refresh";
-import { requireDashboardRole } from "@/lib/dashboard-auth";
+import { requireDashboardContext } from "@/lib/dashboard-auth";
 
 const menuItems = [
   { name: "ภาพรวม", href: "/dashboard" },
@@ -21,15 +19,8 @@ const menuItems = [
 export default async function IngredientsPage({ searchParams }: {
   searchParams: Promise<{ success?: string }>;
 }) {
-  await requireDashboardRole(["admin"]);
+  const { db: supabase } = await requireDashboardContext(["admin"]);
   const { success } = await searchParams;
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-
-  if (!user) redirect("/login");
-  const { data: canDelete } = await supabase.rpc("is_catalog_admin");
 
   const [ingredientsResult, categoriesResult] = await Promise.all([
     supabase
@@ -136,7 +127,7 @@ export default async function IngredientsPage({ searchParams }: {
             </div>
           ) : (
             <IngredientsClient
-              canDelete={canDelete === true}
+              canDelete
               ingredients={normalizedIngredients}
               activeCategories={categoriesResult.data ?? []}
             />

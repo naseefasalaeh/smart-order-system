@@ -1,8 +1,6 @@
 import Link from "next/link";
-import { redirect } from "next/navigation";
 import LogoutButton from "@/components/logout-button";
-import { createClient } from "@/lib/supabase/server";
-import { requireDashboardRole } from "@/lib/dashboard-auth";
+import { requireDashboardContext } from "@/lib/dashboard-auth";
 import { dashboardMenuForRole } from "@/lib/dashboard-navigation";
 
 const menuItems = [
@@ -36,15 +34,7 @@ const statusColors: Record<string, string> = {
 };
 
 export default async function DashboardPage() {
-  await requireDashboardRole(["admin", "staff"]);
-  const supabase = await createClient();
-
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-
-  if (!user) redirect("/login");
-  const { data: profile } = await supabase.from("profiles").select("role").eq("id", user.id).maybeSingle();
+  const { db: supabase, role } = await requireDashboardContext(["admin", "staff"]);
 
   // จุดเริ่มต้นและสิ้นสุดของวันนี้ในประเทศไทย แล้วแปลงเป็น UTC สำหรับค้นฐานข้อมูล
   const now = new Date();
@@ -184,7 +174,7 @@ export default async function DashboardPage() {
         </div>
 
         <nav className="mt-8 space-y-2">
-          {dashboardMenuForRole(menuItems, profile?.role).map((item) => (
+          {dashboardMenuForRole(menuItems, role).map((item) => (
             <Link
               key={item.name}
               href={item.href}

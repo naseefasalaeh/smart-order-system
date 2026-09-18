@@ -1,11 +1,9 @@
 import Link from "next/link";
-import { redirect } from "next/navigation";
 import LogoutButton from "@/components/logout-button";
 import OrderRealtimeRefresh from "@/components/order-realtime-refresh";
 import UpdateOrderStatusButton from "@/components/update-order-status-button";
-import { createClient } from "@/lib/supabase/server";
 import { bangkokDayRange, bangkokToday } from "@/lib/bangkok-date";
-import { requireDashboardRole } from "@/lib/dashboard-auth";
+import { requireDashboardContext } from "@/lib/dashboard-auth";
 import { dashboardMenuForRole } from "@/lib/dashboard-navigation";
 
 const menuItems = [
@@ -61,7 +59,7 @@ type OrdersPageProps = {
 };
 
 export default async function OrdersPage({ searchParams }: OrdersPageProps) {
-  await requireDashboardRole(["admin", "staff"]);
+  const { db: supabase, role } = await requireDashboardContext(["admin", "staff"]);
   const { status, date } = await searchParams;
   const activeStatus = status && allowedStatuses.includes(status) ? status : "";
   const isHistory =
@@ -73,18 +71,7 @@ export default async function OrdersPage({ searchParams }: OrdersPageProps) {
     timeZone: "Asia/Bangkok", weekday: "long", day: "numeric", month: "long", year: "numeric",
   });
 
-  const supabase = await createClient();
-
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-
-  if (!user) {
-    redirect("/login");
-  }
-
-  const { data: profile } = await supabase.from("profiles").select("role").eq("id", user.id).maybeSingle();
-  const canAdvanceStatus = profile?.role === "admin";
+  const canAdvanceStatus = role === "admin";
 
   let ordersQuery = supabase.from("orders").select(`
     id,
@@ -151,7 +138,7 @@ export default async function OrdersPage({ searchParams }: OrdersPageProps) {
         <h1 className="mt-1 text-2xl font-bold">ระบบจัดการร้าน</h1>
 
         <nav className="mt-8 space-y-2">
-          {dashboardMenuForRole(menuItems, profile?.role).map((item) => (
+          {dashboardMenuForRole(menuItems, role).map((item) => (
             <Link
               key={item.name}
               href={item.href}

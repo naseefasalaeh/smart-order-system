@@ -1,10 +1,7 @@
-import { redirect } from "next/navigation";
 import DashboardSidebar from "@/components/dashboard-sidebar";
 import OrderRealtimeRefresh from "@/components/order-realtime-refresh";
 import UpdateOrderStatusButton from "@/components/update-order-status-button";
-import { createClient } from "@/lib/supabase/server";
-import { requireDashboardRole } from "@/lib/dashboard-auth";
-import type { ShopRole } from "@/lib/dashboard-auth";
+import { requireDashboardContext } from "@/lib/dashboard-auth";
 
 const statusLabels: Record<string, string> = {
   confirmed: "รอเริ่มทำ",
@@ -19,17 +16,7 @@ const statusColors: Record<string, string> = {
 };
 
 export default async function KitchenPage() {
-  await requireDashboardRole(["admin", "kitchen_staff"]);
-  const supabase = await createClient();
-
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-
-  if (!user) {
-    redirect("/login");
-  }
-  const { data: profile } = await supabase.from("profiles").select("role").eq("id", user.id).maybeSingle();
+  const { db: supabase, role } = await requireDashboardContext(["admin", "kitchen_staff"]);
 
   const { data: orders, error } = await supabase
     .from("orders")
@@ -66,7 +53,7 @@ export default async function KitchenPage() {
     <main className="min-h-screen bg-orange-50 lg:flex">
       <OrderRealtimeRefresh channelName="staff-kitchen" />
 
-      <DashboardSidebar role={profile?.role as ShopRole} activePath="/dashboard/kitchen" />
+      <DashboardSidebar role={role} activePath="/dashboard/kitchen" />
 
       <section className="flex-1 p-6 sm:p-8">
         <div className="mx-auto max-w-7xl">
