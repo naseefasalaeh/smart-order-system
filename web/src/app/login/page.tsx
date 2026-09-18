@@ -33,9 +33,9 @@ export default function LoginPage() {
 
     const { data: { user } } = await supabase.auth.getUser();
     const { data: profile } = user
-      ? await supabase.from("profiles").select("role").eq("id", user.id).maybeSingle()
+      ? await supabase.from("profiles").select("role,is_active").eq("id", user.id).maybeSingle()
       : { data: null };
-    if (!profile || !["admin", "staff", "kitchen_staff"].includes(profile.role)) {
+    if (!profile?.is_active || !["admin", "staff", "kitchen_staff"].includes(profile.role)) {
       await supabase.auth.signOut();
       setErrorMessage("บัญชีนี้ไม่มีสิทธิ์เข้าใช้งาน");
       setIsLoading(false);

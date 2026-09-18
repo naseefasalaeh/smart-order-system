@@ -17,10 +17,10 @@ export async function requireDashboardContext(allowed: ShopRole[]) {
   logDuration("auth.getUser", userStarted);
   if (authError || !user) redirect("/login");
   const profileStarted = performance.now();
-  const { data: profile, error } = await db.from("profiles").select("role").eq("id", user.id).maybeSingle();
+  const { data: profile, error } = await db.from("profiles").select("role,is_active").eq("id", user.id).maybeSingle();
   logDuration("profiles.role", profileStarted);
   const role = profile?.role as ShopRole | undefined;
-  if (error || !role || !allowed.includes(role)) notFound();
+  if (error || !profile?.is_active || !role || !allowed.includes(role)) notFound();
   logDuration("dashboard.auth.total", totalStarted);
   return { db, user, role };
 }

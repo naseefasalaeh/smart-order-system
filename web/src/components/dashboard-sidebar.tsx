@@ -13,6 +13,7 @@ const menuItems = [
   { name: "โต๊ะและ QR Code", href: "/dashboard/tables" },
   { name: "ตัวเลือกเสริม", href: "/dashboard/addons" },
   { name: "รายงาน", href: "/dashboard/reports" },
+  { name: "จัดการผู้ใช้งาน", href: "/dashboard/users" },
 ];
 
 export default function DashboardSidebar({ role, activePath }: { role: ShopRole; activePath: string }) {
