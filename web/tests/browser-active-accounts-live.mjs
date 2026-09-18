@@ -133,10 +133,10 @@ async function run() {
     assert.equal(updated.status, 200, JSON.stringify(updated));
     pass('role and name update through admin API');
 
-    const editor = admin.page.locator('section[aria-label="รายชื่อผู้ใช้งาน"] form')
+    const editor = admin.page.locator('section[aria-label="รายชื่อผู้ใช้งาน"] article')
       .filter({ hasText: staffUser.email });
     await editor.getByRole('textbox', { name: 'ชื่อ' }).fill(`${state.prefix}_ui`);
-    await editor.getByRole('combobox', { name: 'สิทธิ์' }).selectOption('kitchen_staff');
+    await editor.getByRole('combobox', { name: 'Role' }).selectOption('kitchen_staff');
     await editor.getByRole('button', { name: 'บันทึก' }).click();
     await admin.page.getByRole('status').getByText('บันทึกเรียบร้อย').waitFor();
     assert.deepEqual(await rows(service.from('profiles').select('role,full_name').eq('id', staffUser.id).single()),
@@ -149,7 +149,7 @@ async function run() {
     const oldSession = publicClient();
     assert.ifError((await oldSession.auth.signInWithPassword({ email: staffUser.email, password: staffUser.password })).error);
     assert.ok((await rows(oldSession.from('orders').select('id').limit(1))).length >= 0);
-    await editor.getByRole('combobox', { name: 'สิทธิ์' }).selectOption('staff');
+    await editor.getByRole('combobox', { name: 'Role' }).selectOption('staff');
     await editor.getByRole('checkbox').uncheck();
     const disableResponse = admin.page.waitForResponse(response =>
       response.url().endsWith('/api/admin/users') && response.request().method() === 'PATCH');
@@ -179,22 +179,23 @@ async function run() {
     const selfDisable = await api(admin.context, 'PATCH', { id: admin.user.id, action: 'update',
       role: 'staff', isActive: false, fullName: `${state.prefix}_admin` });
     assert.equal(selfDisable.status, 403);
-    const reset = await api(admin.context, 'PATCH', { id: staffUser.id, action: 'reset' });
-    assert.ok([200, 429].includes(reset.status), JSON.stringify(reset));
-    state.resetStatus = reset.status; save();
-    pass(`self demotion blocked; TEST password reset status ${reset.status}`);
+    const replacementPassword = randomBytes(24).toString('base64url');
+    const reset = await api(admin.context, 'PATCH', { id: staffUser.id, action: 'set_password',
+      password: replacementPassword, confirmPassword: replacementPassword });
+    assert.equal(reset.status, 200, JSON.stringify(reset));
+    pass('self demotion blocked; TEST password changed without email');
 
     const inviteEmail = `${state.prefix.toLowerCase()}_invite@example.invalid`;
     state.inviteEmail = inviteEmail; save();
+    const accountPassword = randomBytes(24).toString('base64url');
     const invite = await api(admin.context, 'POST', { email: inviteEmail,
-      role: 'staff', fullName: `${state.prefix}_invite` });
+      role: 'staff', fullName: `${state.prefix}_invite`, password: accountPassword,
+      confirmPassword: accountPassword });
     state.inviteStatus = invite.status; save();
-    assert.ok([201, 429].includes(invite.status), JSON.stringify(invite));
-    if (invite.status === 201) {
-      state.users.push({ id: invite.body.id, email: inviteEmail, initialRole: 'invite' }); save();
-      assert.equal((await rows(service.from('profiles').select('role,is_active').eq('id', invite.body.id).single())).is_active, true);
-    }
-    pass(`admin invite TEST status ${invite.status}`);
+    assert.equal(invite.status, 201, JSON.stringify(invite));
+    state.users.push({ id: invite.body.id, email: inviteEmail, initialRole: 'created' }); save();
+    assert.equal((await rows(service.from('profiles').select('role,is_active').eq('id', invite.body.id).single())).is_active, true);
+    pass('admin creates TEST user without email');
 
     const guest = await browser.newContext(); contexts.push(guest);
     const publicTable = (await rows(service.from('restaurant_tables').select('id').eq('status', 'available').limit(1)))[0];

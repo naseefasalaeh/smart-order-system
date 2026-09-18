@@ -26,3 +26,9 @@ Measured in headless Edge against a local production build connected to the link
 - Deleted only the registered TEST Auth users from each live run. For both runs, SHA-256 fingerprints of 20 public tables matched before and after cleanup. A separate read-only verification found no TEST catalog, table, profile, or Auth users left behind.
 - Local automated tests: 77 passed. Production build and TypeScript passed. ESLint had zero errors and two pre-existing `no-img-element` warnings in customer menu and QR components.
 - Test evidence and screenshots are in the ignored `.test-artifacts/active-accounts-live*` directories. The registry omits passwords after cleanup.
+
+## Follow-up: owner-managed passwords
+
+The email limitation above describes the earlier Invite and Reset Password flow. The current user-management page lets Admin create a confirmed account with a chosen password, set a new password directly, and delete an account after typing its Email. These operations use server-only Supabase Auth Admin methods and send no email.
+
+The live TEST lifecycle passed: create, immediate login, password change, login with the new password, delete, and rejected login after deletion. Staff and Kitchen Staff were denied every user API method. The one-time credential display disappeared on reload; the password was absent from the profile, user metadata, list response, and localStorage. Cleanup restored all 20 table fingerprints and left no run TEST Auth users. A separate role, session, Public QR, and mobile regression also passed with matching cleanup fingerprints.

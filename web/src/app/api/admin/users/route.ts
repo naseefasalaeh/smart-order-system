@@ -25,6 +25,11 @@ function validProfile(value: unknown): value is { role: ShopRole; fullName: stri
     && v.fullName.length <= 120 && typeof v.isActive === "boolean";
 }
 
+function validPassword(password: unknown, confirmation: unknown): password is string {
+  return typeof password === "string" && password.length >= 8 && password.length <= 72
+    && password.trim().length > 0 && password === confirmation;
+}
+
 function response(message: string, status: number) {
   return NextResponse.json({ error: message }, { status, headers: { "Cache-Control": "no-store" } });
 }
@@ -52,20 +57,28 @@ export async function POST(request: Request) {
   if (!actorId) return response("Forbidden", 403);
   const input: unknown = await request.json().catch(() => null);
   if (!input || typeof input !== "object") return response("Invalid input", 400);
-  const { email, role, fullName } = input as Record<string, unknown>;
+  const { email, role, fullName, password, confirmPassword } = input as Record<string, unknown>;
   if (typeof email !== "string" || email.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)
-    || !validProfile({ role, fullName, isActive: true })) return response("Invalid input", 400);
+    || !validProfile({ role, fullName, isActive: true }) || !validPassword(password, confirmPassword)) {
+    return response("Invalid email, profile, or password confirmation", 400);
+  }
   const admin = createAdminClient();
-  const { data, error } = await admin.auth.admin.inviteUserByEmail(email.trim(),
-    { data: { full_name: (fullName as string).trim() } });
-  if (error?.status === 429) return response("Email limit reached. Please try again later.", 429);
-  if (error || !data.user) return response("Unable to invite user", 400);
+  const { data, error } = await admin.auth.admin.createUser({
+    email: email.trim(), password, email_confirm: true,
+    user_metadata: { full_name: (fullName as string).trim() },
+  });
+  if (error || !data.user) return response("Unable to create user", 400);
   const { error: profileError } = await admin.rpc("manage_staff_profile", {
     p_actor_id: actorId, p_target_id: data.user.id, p_role: role,
     p_is_active: true, p_full_name: (fullName as string).trim(),
   });
-  if (profileError) return response("Invite sent; account remains inactive. Retry activation from user management.", 500);
-  return NextResponse.json({ id: data.user.id }, { status: 201 });
+  if (profileError) {
+    const removed = await admin.auth.admin.deleteUser(data.user.id);
+    return response(removed.error ? "Unable to activate user; remove the inactive account before retrying"
+      : "Unable to activate user; account creation was rolled back", 500);
+  }
+  return NextResponse.json({ id: data.user.id, email: data.user.email },
+    { status: 201, headers: { "Cache-Control": "no-store" } });
 }
 
 export async function PATCH(request: Request) {
@@ -73,15 +86,14 @@ export async function PATCH(request: Request) {
   if (!actorId) return response("Forbidden", 403);
   const input: unknown = await request.json().catch(() => null);
   if (!input || typeof input !== "object") return response("Invalid input", 400);
-  const { id, action, role, fullName, isActive } = input as Record<string, unknown>;
+  const { id, action, role, fullName, isActive, password, confirmPassword } = input as Record<string, unknown>;
   if (typeof id !== "string" || !uuid.test(id)) return response("Invalid user", 400);
   const admin = createAdminClient();
-  if (action === "reset") {
-    const { data, error } = await admin.auth.admin.getUserById(id);
-    if (error || !data.user?.email) return response("User not found", 404);
-    const { error: resetError } = await admin.auth.resetPasswordForEmail(data.user.email);
-    if (resetError?.status === 429) return response("Email limit reached. Please try again later.", 429);
-    return resetError ? response("Unable to send reset email", 500) : NextResponse.json({ ok: true });
+  if (action === "set_password") {
+    if (!validPassword(password, confirmPassword)) return response("Invalid password confirmation", 400);
+    const { error } = await admin.auth.admin.updateUserById(id, { password });
+    return error ? response("Unable to set password", 400)
+      : NextResponse.json({ ok: true }, { headers: { "Cache-Control": "no-store" } });
   }
   if (action !== "update" || !validProfile({ role, fullName, isActive })) return response("Invalid input", 400);
   if (id === actorId && (role !== "admin" || !isActive)) return response("Cannot disable or demote your own admin account", 403);
@@ -109,4 +121,42 @@ export async function PATCH(request: Request) {
     if (error) return response("Unable to update profile", 403);
   }
   return NextResponse.json({ ok: true });
+}
+
+export async function DELETE(request: Request) {
+  const actorId = await activeAdminId();
+  if (!actorId) return response("Forbidden", 403);
+  const input: unknown = await request.json().catch(() => null);
+  if (!input || typeof input !== "object") return response("Invalid input", 400);
+  const { id, confirmationEmail } = input as Record<string, unknown>;
+  if (typeof id !== "string" || !uuid.test(id) || typeof confirmationEmail !== "string") {
+    return response("Invalid input", 400);
+  }
+  if (id === actorId) return response("Cannot delete your own account", 403);
+  const admin = createAdminClient();
+  const { data: userResult, error: userError } = await admin.auth.admin.getUserById(id);
+  if (userError || !userResult.user?.email) return response("User not found", 404);
+  if (confirmationEmail.trim().toLowerCase() !== userResult.user.email.toLowerCase()) {
+    return response("Confirmation email does not match", 400);
+  }
+  const { data: profile, error: profileError } = await admin.from("profiles")
+    .select("role,is_active,full_name").eq("id", id).single();
+  if (profileError || !profile || !roles.has(profile.role as ShopRole)) return response("Profile not found", 404);
+  const wasActive = profile.is_active;
+  const name = profile.full_name?.trim() || userResult.user.email.slice(0, 120);
+  const { error: disableError } = await admin.rpc("manage_staff_profile", {
+    p_actor_id: actorId, p_target_id: id, p_role: profile.role,
+    p_is_active: false, p_full_name: name,
+  });
+  if (disableError) return response(disableError.message.includes("LAST_ACTIVE_ADMIN")
+    ? "Cannot delete the last active admin" : "Unable to delete user", 403);
+  const { error: deleteError } = await admin.auth.admin.deleteUser(id);
+  if (deleteError) {
+    if (wasActive) await admin.rpc("manage_staff_profile", {
+      p_actor_id: actorId, p_target_id: id, p_role: profile.role,
+      p_is_active: true, p_full_name: name,
+    });
+    return response("Unable to delete user", 500);
+  }
+  return NextResponse.json({ ok: true }, { headers: { "Cache-Control": "no-store" } });
 }
