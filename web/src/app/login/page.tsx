@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useState } from "react";
+import { FormEvent, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
@@ -13,36 +13,46 @@ export default function LoginPage() {
   const [password, setPassword] = useState("");
   const [errorMessage, setErrorMessage] = useState("");
   const [isLoading, setIsLoading] = useState(false);
+  const busy = useRef(false);
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-
+    if (busy.current) return;
+    busy.current = true;
     setErrorMessage("");
     setIsLoading(true);
-
-    const { error } = await supabase.auth.signInWithPassword({
+    let navigating = false;
+    try {
+    const { data, error } = await supabase.auth.signInWithPassword({
       email,
       password,
     });
 
     if (error) {
-      setErrorMessage("อีเมลหรือรหัสผ่านไม่ถูกต้อง");
-      setIsLoading(false);
+      setErrorMessage(error.status && error.status >= 500 ? "ระบบเข้าสู่ระบบไม่พร้อมชั่วคราว กรุณาลองใหม่" : "อีเมลหรือรหัสผ่านไม่ถูกต้อง");
       return;
     }
 
-    const { data: { user } } = await supabase.auth.getUser();
-    const { data: profile } = user
+    const user = data.user;
+    const { data: profile, error: profileError } = user
       ? await supabase.from("profiles").select("role,is_active").eq("id", user.id).maybeSingle()
-      : { data: null };
+      : { data: null, error: null };
+    if (profileError) {
+      setErrorMessage("ตรวจสอบสิทธิ์ไม่สำเร็จชั่วคราว กรุณาลองใหม่");
+      return;
+    }
     if (!profile?.is_active || !["admin", "staff", "kitchen_staff"].includes(profile.role)) {
       await supabase.auth.signOut();
       setErrorMessage("บัญชีนี้ไม่มีสิทธิ์เข้าใช้งาน");
-      setIsLoading(false);
       return;
     }
-    router.push(profile.role === "kitchen_staff" ? "/dashboard/kitchen" : "/dashboard");
-    router.refresh();
+    navigating = true;
+    router.replace(profile.role === "kitchen_staff" ? "/dashboard/kitchen" : "/dashboard");
+    } catch {
+      setErrorMessage("เชื่อมต่อระบบไม่สำเร็จ กรุณาลองใหม่");
+    } finally {
+      if (!navigating) { busy.current = false; setIsLoading(false); }
+    }
   }
 
   return (
@@ -106,7 +116,7 @@ export default function LoginPage() {
             disabled={isLoading}
             className="w-full rounded-xl bg-orange-500 py-3 font-semibold text-white transition hover:bg-orange-600 disabled:cursor-not-allowed disabled:opacity-60"
           >
-            {isLoading ? "กำลังเข้าสู่ระบบ..." : "เข้าสู่ระบบ"}
+            {isLoading ? "กำลังดำเนินการ…" : "เข้าสู่ระบบ"}
           </button>
         </form>
 

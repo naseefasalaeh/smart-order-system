@@ -1,4 +1,5 @@
 import { createClient } from "@supabase/supabase-js";
+import { timedFetch } from "./timed-fetch";
 
 export function createAdminClient() {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -13,6 +14,7 @@ export function createAdminClient() {
   }
 
   return createClient(supabaseUrl, serviceRoleKey, {
+    global: { fetch: timedFetch },
     auth: {
       autoRefreshToken: false,
       persistSession: false,

@@ -39,11 +39,12 @@ export async function POST(request: Request, context: RouteContext) {
       if (!session || !order) return NextResponse.json({ error: "ไม่มีสิทธิ์ยกเลิกออเดอร์นี้" }, { status: 403 });
     } else {
       const supabase = await createClient();
-      const { data: { user } } = await supabase.auth.getUser();
+      const { data: { user }, error: authError } = await supabase.auth.getUser();
+      if (authError && (authError.status ?? 0) >= 500) throw authError;
       if (!user) return NextResponse.json({ error: "กรุณาเข้าสู่ระบบ" }, { status: 401 });
-      const { data: profile, error: profileError } = await supabase.from("profiles").select("role").eq("id", user.id).maybeSingle();
+      const { data: profile, error: profileError } = await supabase.from("profiles").select("role,is_active").eq("id", user.id).maybeSingle();
       if (profileError) throw profileError;
-      if (!profile || !["admin", "staff"].includes(profile.role)) {
+      if (!profile?.is_active || !["admin", "staff"].includes(profile.role)) {
         return NextResponse.json({ error: "ไม่มีสิทธิ์ยกเลิกออเดอร์" }, { status: 403 });
       }
     }
@@ -63,7 +64,12 @@ export async function POST(request: Request, context: RouteContext) {
         hint: error.hint,
       });
 
-      return NextResponse.json({ error: "ไม่สามารถยกเลิกได้ เนื่องจากร้านเริ่มทำอาหารแล้ว" }, { status: 409 });
+      if (error.code === "42501") {
+        return NextResponse.json({ error: "ไม่มีสิทธิ์ยกเลิกออเดอร์นี้" }, { status: 403 });
+      }
+      return error.code === "P0001"
+        ? NextResponse.json({ error: "ไม่สามารถยกเลิกได้ เนื่องจากสถานะออเดอร์เปลี่ยนไปแล้ว" }, { status: 409 })
+        : NextResponse.json({ error: "ยกเลิกออเดอร์ไม่สำเร็จชั่วคราว กรุณาตรวจสถานะก่อนลองใหม่" }, { status: 503 });
     }
 
     return NextResponse.json({ success: true });

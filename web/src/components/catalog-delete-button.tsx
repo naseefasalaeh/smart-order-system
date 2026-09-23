@@ -71,7 +71,7 @@ export default function CatalogDeleteButton({ id, name, kind, className = "ml-3 
               className="rounded-lg border px-4 py-2 disabled:opacity-50">ยกเลิก</button>
             <button type="submit" disabled={pending || confirmation !== name}
               className="rounded-lg bg-red-600 px-4 py-2 font-semibold text-white disabled:opacity-50">
-              {pending ? "กำลังตรวจสอบ..." : "ยืนยันลบถาวร"}
+              {pending ? "กำลังดำเนินการ…" : "ยืนยันลบถาวร"}
             </button>
           </div>
         </form>

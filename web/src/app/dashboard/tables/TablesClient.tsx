@@ -5,6 +5,7 @@ import { useMemo, useRef, useState } from "react";
 import { useFormStatus } from "react-dom";
 import TableQRCode from "@/components/TableQRCode";
 import { saveTable } from "./actions";
+import ActionForm from "@/components/action-form";
 
 type RestaurantTable = { id: number; table_number: string; status: string };
 type Filter = "all" | "active" | "inactive";
@@ -13,7 +14,7 @@ function SaveButton({ label }: { label: string }) {
   const { pending } = useFormStatus();
   return <button type="submit" disabled={pending} aria-busy={pending}
     className="min-h-11 rounded-lg bg-orange-500 px-5 py-2 font-semibold text-white transition hover:bg-orange-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-600 focus-visible:ring-offset-2 disabled:cursor-wait disabled:opacity-60">
-    {pending ? "กำลังบันทึก..." : label}
+    {pending ? "กำลังดำเนินการ…" : label}
   </button>;
 }
 
@@ -22,7 +23,7 @@ function ToggleButton({ active }: { active: boolean }) {
   return <button type="submit" disabled={pending} aria-busy={pending}
     className={`min-h-11 w-full rounded-lg border px-3 py-2 text-sm font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-600 focus-visible:ring-offset-2 disabled:opacity-60 ${
       active ? "border-red-300 text-red-700 hover:bg-red-50" : "border-green-300 text-green-800 hover:bg-green-50"
-    }`}>{pending ? "กำลังบันทึก..." : active ? "ปิดใช้งาน" : "เปิดใช้งาน"}</button>;
+    }`}>{pending ? "กำลังดำเนินการ…" : active ? "ปิดใช้งาน" : "เปิดใช้งาน"}</button>;
 }
 
 export default function TablesClient({ tables }: { tables: RestaurantTable[] }) {
@@ -32,6 +33,7 @@ export default function TablesClient({ tables }: { tables: RestaurantTable[] }) 
   const [number, setNumber] = useState("");
   const [active, setActive] = useState(true);
   const [validation, setValidation] = useState("");
+  const [notice, setNotice] = useState("");
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState<Filter>("all");
   const activeCount = tables.filter((table) => table.status !== "inactive").length;
@@ -49,6 +51,12 @@ export default function TablesClient({ tables }: { tables: RestaurantTable[] }) 
     dialog.current?.showModal();
   }
 
+  async function save(form: FormData) {
+    const result = await saveTable(form);
+    if (result.error) { setValidation(result.error); setNotice(result.error); return; }
+    setValidation(""); setNotice("บันทึกโต๊ะแล้ว"); dialog.current?.close();
+  }
+
   function validate(event: React.FormEvent<HTMLFormElement>) {
     const trimmed = number.trim();
     if (!trimmed || trimmed.length > 40) {
@@ -61,6 +69,7 @@ export default function TablesClient({ tables }: { tables: RestaurantTable[] }) 
   }
 
   return <>
+    {notice && <p role="status" className="mt-4 rounded-xl bg-white p-4">{notice}</p>}
     <section aria-label="สรุปโต๊ะ" className="mt-6 grid gap-3 sm:grid-cols-3">
       {[
         ["โต๊ะทั้งหมด", tables.length], ["เปิดใช้งาน", activeCount], ["ปิดใช้งาน", tables.length - activeCount],
@@ -99,11 +108,11 @@ export default function TablesClient({ tables }: { tables: RestaurantTable[] }) 
               <Link href={`/table/id-${table.id}`} target="_blank" className="inline-flex min-h-11 items-center justify-center rounded-lg border border-orange-300 px-3 py-2 text-center text-sm font-semibold text-orange-800 hover:bg-orange-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-500">เปิดหน้าสั่งอาหาร</Link>
               <button type="button" onClick={() => openForm(table)} className="min-h-11 rounded-lg border border-zinc-300 px-3 py-2 text-sm font-semibold text-zinc-700 hover:bg-zinc-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-500">แก้ไขโต๊ะ</button>
             </div>
-            <form action={saveTable} className="mt-2">
+            <ActionForm action={save} className="mt-2">
               <input type="hidden" name="id" value={table.id} /><input type="hidden" name="table_number" value={table.table_number} />
               {!isActive && <input type="hidden" name="is_active" value="on" />}
               <ToggleButton active={isActive} />
-            </form>
+            </ActionForm>
           </article>;
         })}
       </section>}
@@ -112,7 +121,7 @@ export default function TablesClient({ tables }: { tables: RestaurantTable[] }) 
       className="fixed inset-0 m-auto w-[min(92vw,30rem)] rounded-2xl bg-white p-6 text-zinc-900 shadow-xl backdrop:bg-black/50">
       <h2 id="table-dialog-title" className="text-xl font-bold">{editing ? "แก้ไขโต๊ะ" : "เพิ่มโต๊ะ"}</h2>
       <p className="mt-1 text-sm text-zinc-600">ตั้งชื่อโต๊ะและเลือกสถานะการใช้งาน</p>
-      <form key={modalKey} action={saveTable} onSubmit={validate} className="mt-5 space-y-4">
+      <ActionForm key={modalKey} action={save} onSubmit={validate} className="mt-5 space-y-4">
         {editing && <input type="hidden" name="id" value={editing.id} />}
         <label className="block text-sm font-semibold">หมายเลขหรือชื่อโต๊ะ
           <input name="table_number" value={number} onChange={(event) => { setNumber(event.target.value); setValidation(""); }} maxLength={40} autoFocus aria-invalid={Boolean(validation)} aria-describedby={validation ? "table-number-error" : undefined}
@@ -124,7 +133,7 @@ export default function TablesClient({ tables }: { tables: RestaurantTable[] }) 
           <button type="button" onClick={() => dialog.current?.close()} className="min-h-11 rounded-lg border border-zinc-300 px-4 py-2 font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-500">ยกเลิก</button>
           <SaveButton label={editing ? "บันทึกโต๊ะ" : "เพิ่มโต๊ะ"} />
         </div>
-      </form>
+      </ActionForm>
     </dialog>
   </>;
 }

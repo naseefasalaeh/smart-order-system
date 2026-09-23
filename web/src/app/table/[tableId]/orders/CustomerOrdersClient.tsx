@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useCustomerOrderEvents } from "@/components/customer-order-events";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 type OrderOption = {
@@ -37,6 +38,7 @@ const statusLabels: Record<string, string> = {
   confirmed: "รับออเดอร์แล้ว",
   preparing: "กำลังทำ",
   ready: "พร้อมเสิร์ฟ",
+  served: "เสิร์ฟแล้ว กรุณาชำระเงินที่เคาน์เตอร์",
   completed: "เสร็จสิ้น",
   cancelled: "ยกเลิก",
 };
@@ -155,6 +157,8 @@ export default function CustomerOrdersClient({ tableId, tableNumber, legacyRefer
       }
     }
   }, [stopPolling, tableId, legacyReference]);
+
+  useCustomerOrderEvents(tableId, legacyReference, loadOrders);
 
   useEffect(() => {
     const canPoll = () =>

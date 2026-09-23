@@ -1,8 +1,9 @@
+import ActionForm from "@/components/action-form";
+import SubmitButton from "@/components/submit-button";
 import Link from "next/link";
 import DashboardSidebar from "@/components/dashboard-sidebar";
 import { notFound, redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
-import { createClient } from "@/lib/supabase/server";
 import { requireDashboardContext, requireDashboardRole } from "@/lib/dashboard-auth";
 
 type EditIngredientPageProps = {
@@ -31,7 +32,7 @@ export default async function EditIngredientPage({
       .from("ingredients")
       .select("id, name, unit, stock_quantity, minimum_stock, category_id")
       .eq("id", id)
-      .single(),
+      .maybeSingle(),
     supabase
       .from("ingredient_categories")
       .select("id, name, display_order, is_active")
@@ -41,9 +42,8 @@ export default async function EditIngredientPage({
 
   const { data: ingredient, error } = ingredientResult;
 
-  if (error || !ingredient) {
-    notFound();
-  }
+  if (error) throw new Error("โหลดข้อมูลไม่สำเร็จชั่วคราว กรุณาลองใหม่");
+  if (!ingredient) notFound();
 
   const currentCategoryId = ingredient.category_id
     ? Number(ingredient.category_id)
@@ -51,15 +51,7 @@ export default async function EditIngredientPage({
 
   async function updateIngredient(formData: FormData) {
     "use server";
-    await requireDashboardRole(["admin"]);
-
-    const supabase = await createClient();
-
-    const {
-      data: { user: actionUser },
-    } = await supabase.auth.getUser();
-
-    if (!actionUser) redirect("/login");
+    const supabase = await requireDashboardRole(["admin"]);
 
     const name = String(formData.get("name") ?? "").trim();
     const unit = String(formData.get("unit") ?? "").trim();
@@ -169,7 +161,7 @@ export default async function EditIngredientPage({
             </div>
           )}
 
-          <form action={updateIngredient} className="mt-8 space-y-5">
+          <ActionForm action={updateIngredient} className="mt-8 space-y-5">
             {categoriesResult.error && (
               <div className="rounded-xl bg-red-50 p-4 text-red-700">
                 โหลดหมวดหมู่ไม่สำเร็จ กรุณากลับไปลองใหม่
@@ -302,14 +294,14 @@ export default async function EditIngredientPage({
                 ยกเลิก
               </Link>
 
-              <button
+              <SubmitButton
                 type="submit"
                 className="rounded-xl bg-orange-500 px-5 py-3 font-semibold text-white hover:bg-orange-600"
               >
                 บันทึกการแก้ไข
-              </button>
+              </SubmitButton>
             </div>
-          </form>
+          </ActionForm>
         </section>
       </div>
     </main>

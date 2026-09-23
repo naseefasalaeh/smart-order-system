@@ -1,8 +1,9 @@
+import ActionForm from "@/components/action-form";
+import SubmitButton from "@/components/submit-button";
 import Link from "next/link";
 import DashboardSidebar from "@/components/dashboard-sidebar";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { createClient } from "@/lib/supabase/server";
 import { requireDashboardContext, requireDashboardRole } from "@/lib/dashboard-auth";
 
 type CategoriesPageProps = {
@@ -22,14 +23,7 @@ function categorySuccessRedirect(message: string): never {
 }
 
 async function requireAuthenticatedClient() {
-  await requireDashboardRole(["admin"]);
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-
-  if (!user) redirect("/login");
-  return supabase;
+  return requireDashboardRole(["admin"]);
 }
 
 export default async function IngredientCategoriesPage({
@@ -37,12 +31,12 @@ export default async function IngredientCategoriesPage({
 }: CategoriesPageProps) {
   const { db: supabase, role } = await requireDashboardContext(["admin"]);
   const { error: errorMessage, success: successMessage } = await searchParams;
-  const { data: categories, error } = await supabase
+  const [{ data: categories, error }, { data: ingredientCategories, error: ingredientsError }] = await Promise.all([supabase
     .from("ingredient_categories")
     .select("id, name, display_order, is_active")
     .order("display_order", { ascending: true })
-    .order("name", { ascending: true });
-  const { data: ingredientCategories, error: ingredientsError } = await supabase.from("ingredients").select("category_id");
+    .order("name", { ascending: true }),
+    supabase.from("ingredients").select("category_id")]);
   const categoryCounts = new Map<number, number>();
   for (const ingredient of ingredientCategories ?? []) {
     if (ingredient.category_id !== null) categoryCounts.set(ingredient.category_id, (categoryCounts.get(ingredient.category_id) ?? 0) + 1);
@@ -192,7 +186,7 @@ export default async function IngredientCategoriesPage({
 
         <section className="mt-6 rounded-2xl bg-white p-6 shadow-sm">
           <h2 className="text-xl font-bold text-zinc-900">เพิ่มหมวดใหม่</h2>
-          <form
+          <ActionForm
             action={addCategory}
             className="mt-4 grid gap-4 sm:grid-cols-[1fr_150px_auto] sm:items-end"
           >
@@ -221,10 +215,10 @@ export default async function IngredientCategoriesPage({
                 className="w-full rounded-xl border border-zinc-300 px-4 py-3 outline-none focus:border-orange-500"
               />
             </label>
-            <button className="rounded-xl bg-orange-500 px-5 py-3 font-semibold text-white hover:bg-orange-600">
+            <SubmitButton className="rounded-xl bg-orange-500 px-5 py-3 font-semibold text-white hover:bg-orange-600">
               เพิ่มหมวด
-            </button>
-          </form>
+            </SubmitButton>
+          </ActionForm>
         </section>
 
         <section className="mt-6 space-y-3">
@@ -232,7 +226,7 @@ export default async function IngredientCategoriesPage({
             const isOtherCategory = category.name.trim() === "อื่น ๆ";
             return (
               <div key={category.id} className="rounded-2xl bg-white p-5 shadow-sm">
-              <form
+              <ActionForm
                 action={updateCategory}
                 className="grid gap-4 md:grid-cols-[1fr_130px_150px_auto] md:items-end"
               >
@@ -279,11 +273,11 @@ export default async function IngredientCategoriesPage({
                     เปิดใช้งาน
                   </span>
                 </label>
-                <button className="rounded-xl bg-zinc-900 px-5 py-3 font-semibold text-white hover:bg-zinc-800">
+                <SubmitButton className="rounded-xl bg-zinc-900 px-5 py-3 font-semibold text-white hover:bg-zinc-800">
                   บันทึก
-                </button>
-              </form>
-              {!isOtherCategory && <form action={deleteCategory} className="mt-4 flex flex-wrap items-end gap-3 border-t pt-4">
+                </SubmitButton>
+              </ActionForm>
+              {!isOtherCategory && <ActionForm action={deleteCategory} className="mt-4 flex flex-wrap items-end gap-3 border-t pt-4">
                 <input type="hidden" name="category_id" value={category.id} />
                 <label className="text-sm font-medium text-zinc-700">ย้ายวัตถุดิบ {categoryCounts.get(category.id) ?? 0} รายการไป
                   <select name="destination_id" required={(categoryCounts.get(category.id) ?? 0) > 0} className="ml-2 rounded-lg border border-zinc-300 p-2">
@@ -291,8 +285,8 @@ export default async function IngredientCategoriesPage({
                     {(categories ?? []).filter((other) => other.id !== category.id && other.is_active).map((other) => <option key={other.id} value={other.id}>{other.name}</option>)}
                   </select>
                 </label>
-                <button className="rounded-lg border border-red-300 px-4 py-2 font-semibold text-red-700">ย้ายและลบหมวด</button>
-              </form>}
+                <SubmitButton className="rounded-lg border border-red-300 px-4 py-2 font-semibold text-red-700">ย้ายและลบหมวด</SubmitButton>
+              </ActionForm>}
               </div>
             );
           })}

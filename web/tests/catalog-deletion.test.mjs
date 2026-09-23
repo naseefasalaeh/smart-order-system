@@ -79,7 +79,10 @@ test("action returns expected blocks inline, sanitizes errors and revalidates su
     const h = actionHarness({ rpcResult: { data: { status, recipes: ["เมนู A / ตัวเลือก B"] } } });
     const result = await h.action(h.form());
     const success = status === "deleted";
-    assert.equal(h.calls.includes("/dashboard:layout"), success);
+    for (const path of ["/dashboard", "/dashboard/menus", "/dashboard/ingredients", "/dashboard/addons"]) {
+      assert.equal(h.calls.includes(path), success);
+    }
+    assert.equal(h.calls.includes("/dashboard:layout"), false);
     assert.equal(h.calls.includes("/table:layout"), success);
     if (status === "active_orders") assert.match(result.message, /ปิดหรือยกเลิกออเดอร์/);
   }

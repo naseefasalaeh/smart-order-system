@@ -8,6 +8,7 @@ const statusLabels: Record<string, string> = {
   confirmed: "รอเริ่มทำ",
   preparing: "กำลังทำ",
   ready: "พร้อมเสิร์ฟ",
+  served: "เสิร์ฟแล้ว รอชำระเงิน",
   completed: "เสร็จสิ้น",
   cancelled: "ยกเลิก",
 };
@@ -16,6 +17,7 @@ const statusColors: Record<string, string> = {
   confirmed: "bg-blue-100 text-blue-700",
   preparing: "bg-orange-100 text-orange-700",
   ready: "bg-green-100 text-green-700",
+  served: "bg-amber-100 text-amber-800",
   completed: "bg-zinc-100 text-zinc-700",
   cancelled: "bg-red-100 text-red-700",
 };

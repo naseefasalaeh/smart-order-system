@@ -1,8 +1,9 @@
+import ActionForm from "@/components/action-form";
+import SubmitButton from "@/components/submit-button";
 import Link from "next/link";
 import DashboardSidebar from "@/components/dashboard-sidebar";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { createClient } from "@/lib/supabase/server";
 import { requireDashboardContext, requireDashboardRole } from "@/lib/dashboard-auth";
 
 type NewIngredientPageProps = {
@@ -32,15 +33,7 @@ export default async function NewIngredientPage({
 
   async function addIngredient(formData: FormData) {
     "use server";
-    await requireDashboardRole(["admin"]);
-
-    const supabase = await createClient();
-
-    const {
-      data: { user: actionUser },
-    } = await supabase.auth.getUser();
-
-    if (!actionUser) redirect("/login");
+    const supabase = await requireDashboardRole(["admin"]);
 
     const name = String(formData.get("name") ?? "").trim();
     const unit = String(formData.get("unit") ?? "").trim();
@@ -132,7 +125,7 @@ export default async function NewIngredientPage({
             </div>
           )}
 
-          <form action={addIngredient} className="mt-8 space-y-5">
+          <ActionForm action={addIngredient} className="mt-8 space-y-5">
             {categoriesError && (
               <div className="rounded-xl bg-red-50 p-4 text-red-700">
                 โหลดหมวดหมู่ไม่สำเร็จ กรุณากลับไปลองใหม่
@@ -260,14 +253,14 @@ export default async function NewIngredientPage({
                 ยกเลิก
               </Link>
 
-              <button
+              <SubmitButton
                 type="submit"
                 className="rounded-xl bg-orange-500 px-5 py-3 font-semibold text-white hover:bg-orange-600"
               >
                 บันทึกวัตถุดิบ
-              </button>
+              </SubmitButton>
             </div>
-          </form>
+          </ActionForm>
         </section>
       </div>
     </main>

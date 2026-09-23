@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import type { FormEvent } from "react";
 import type { ShopRole } from "@/lib/dashboard-auth";
 
@@ -13,8 +13,8 @@ type UserRow = {
 type ApiResult = { id?: string; email?: string; error?: string };
 const roles: ShopRole[] = ["admin", "staff", "kitchen_staff"];
 
-export default function UserManagement({ currentUserId }: { currentUserId: string }) {
-  const [users, setUsers] = useState<UserRow[]>([]);
+export default function UserManagement({ currentUserId, initialUsers }: { currentUserId: string; initialUsers: UserRow[] }) {
+  const [users, setUsers] = useState<UserRow[]>(initialUsers);
   const [email, setEmail] = useState("");
   const [fullName, setFullName] = useState("");
   const [role, setRole] = useState<ShopRole>("staff");
@@ -22,6 +22,7 @@ export default function UserManagement({ currentUserId }: { currentUserId: strin
   const [confirmPassword, setConfirmPassword] = useState("");
   const [createdCredentials, setCreatedCredentials] = useState<{ email: string; password: string } | null>(null);
   const [busy, setBusy] = useState(false);
+  const locked = useRef(false);
   const [message, setMessage] = useState("");
 
   const load = useCallback(async () => {
@@ -30,16 +31,10 @@ export default function UserManagement({ currentUserId }: { currentUserId: strin
     const body = await res.json() as { users: UserRow[] };
     setUsers(body.users);
   }, []);
-  useEffect(() => {
-    void fetch("/api/admin/users", { cache: "no-store" }).then(async (res) => {
-      if (!res.ok) throw new Error("โหลดรายชื่อผู้ใช้ไม่สำเร็จ");
-      const body = await res.json() as { users: UserRow[] };
-      setUsers(body.users);
-    }).catch((error: Error) => setMessage(error.message));
-  }, []);
 
   async function send(method: "POST" | "PATCH" | "DELETE", payload: object): Promise<ApiResult | null> {
-    if (busy) return null;
+    if (locked.current) return null;
+    locked.current = true;
     setBusy(true);
     setMessage("");
     try {
@@ -51,10 +46,13 @@ export default function UserManagement({ currentUserId }: { currentUserId: strin
       if (!res.ok) throw new Error(result.error ?? "ดำเนินการไม่สำเร็จ");
       return result;
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "ดำเนินการไม่สำเร็จ");
+      setMessage(error instanceof Error && /[ก-๙]/.test(error.message) ? error.message : "เชื่อมต่อระบบไม่สำเร็จ กรุณาตรวจสถานะก่อนลองใหม่");
+      // A multi-step account change may partially succeed. Reload only on error.
+      await refresh();
       return null;
     } finally {
       setBusy(false);
+      locked.current = false;
     }
   }
 
@@ -73,14 +71,18 @@ export default function UserManagement({ currentUserId }: { currentUserId: strin
     setCreatedCredentials({ email: result.email ?? email, password: newPassword });
     setEmail(""); setFullName(""); setRole("staff"); setPassword(""); setConfirmPassword("");
     setMessage("สร้างผู้ใช้งานแล้ว พนักงานเข้าสู่ระบบได้ทันที");
-    await refresh();
+    if (result.id) setUsers(current => [...current, { id: result.id!, email: result.email ?? email, lastSignInAt: undefined,
+      profile: { full_name: fullName.trim(), role, is_active: true } }]);
   }
 
   async function submit(method: "PATCH" | "DELETE", payload: object, successMessage: string) {
     const result = await send(method, payload);
     if (!result) return false;
     setMessage(successMessage);
-    await refresh();
+    const values = payload as { id: string; action?: string; fullName?: string; role?: ShopRole; isActive?: boolean };
+    if (method === "DELETE") setUsers(current => current.filter(user => user.id !== values.id));
+    else if (values.action === "update") setUsers(current => current.map(user => user.id === values.id
+      ? { ...user, profile: { full_name: values.fullName!.trim(), role: values.role!, is_active: values.isActive! } } : user));
     return true;
   }
 
@@ -102,7 +104,7 @@ export default function UserManagement({ currentUserId }: { currentUserId: strin
         <label className="text-sm">รหัสผ่าน<input className="mt-1 w-full rounded-lg border p-2" type="password" autoComplete="new-password" required minLength={8} maxLength={72} value={password} onChange={(event) => setPassword(event.target.value)} /></label>
         <label className="text-sm">ยืนยันรหัสผ่าน<input className="mt-1 w-full rounded-lg border p-2" type="password" autoComplete="new-password" required minLength={8} maxLength={72} value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} /></label>
       </div>
-      <button disabled={busy} className="mt-4 rounded-lg bg-orange-500 px-4 py-2 font-semibold text-white disabled:opacity-50">เพิ่มผู้ใช้งาน</button>
+      <button disabled={busy} className="mt-4 rounded-lg bg-orange-500 px-4 py-2 font-semibold text-white disabled:opacity-50">{busy ? "กำลังดำเนินการ…" : "เพิ่มผู้ใช้งาน"}</button>
     </form>
 
     {createdCredentials && <section className="rounded-2xl border border-green-300 bg-green-50 p-5" aria-label="ข้อมูลเข้าสู่ระบบครั้งเดียว">
@@ -167,7 +169,7 @@ function UserEditor({ user, busy, submit, canDelete }: {
         </select></label>
         <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={isActive} onChange={(event) => setIsActive(event.target.checked)} />เปิดใช้งาน</label>
       </div>
-      <button disabled={busy || !user.profile} className="mt-4 rounded-lg bg-orange-500 px-4 py-2 font-semibold text-white disabled:opacity-50">บันทึก</button>
+      <button disabled={busy || !user.profile} className="mt-4 rounded-lg bg-orange-500 px-4 py-2 font-semibold text-white disabled:opacity-50">{busy ? "กำลังดำเนินการ…" : "บันทึก"}</button>
     </form>
     <div className="mt-3 flex flex-wrap gap-2">
       <button type="button" disabled={busy} onClick={() => { setShowPassword(!showPassword); setShowDelete(false); }}
@@ -182,13 +184,13 @@ function UserEditor({ user, busy, submit, canDelete }: {
         <label className="text-sm">รหัสผ่านใหม่<input className="mt-1 w-full rounded-lg border p-2" type="password" autoComplete="new-password" required minLength={8} maxLength={72} value={newPassword} onChange={(event) => setNewPassword(event.target.value)} /></label>
         <label className="text-sm">ยืนยันรหัสผ่านใหม่<input className="mt-1 w-full rounded-lg border p-2" type="password" autoComplete="new-password" required minLength={8} maxLength={72} value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} /></label>
       </div>
-      <button disabled={busy || newPassword !== confirmPassword} className="mt-3 rounded-lg bg-orange-500 px-4 py-2 font-semibold text-white disabled:opacity-50">บันทึกรหัสผ่านใหม่</button>
+      <button disabled={busy || newPassword !== confirmPassword} className="mt-3 rounded-lg bg-orange-500 px-4 py-2 font-semibold text-white disabled:opacity-50">{busy ? "กำลังดำเนินการ…" : "บันทึกรหัสผ่านใหม่"}</button>
     </form>}
     {showDelete && <form className="mt-4 rounded-lg bg-red-50 p-4" onSubmit={(event) => void remove(event)}>
       <p className="font-medium text-red-800">พิมพ์ Email ของผู้ใช้เพื่อยืนยันการลบ</p>
       <label className="mt-3 block text-sm">Email ยืนยัน<input className="mt-1 w-full rounded-lg border p-2" type="email" autoComplete="off" required value={confirmationEmail} onChange={(event) => setConfirmationEmail(event.target.value)} /></label>
       <button disabled={busy || !user.email || confirmationEmail.trim().toLowerCase() !== user.email.toLowerCase()}
-        className="mt-3 rounded-lg bg-red-700 px-4 py-2 font-semibold text-white disabled:opacity-50">ยืนยันลบผู้ใช้</button>
+        className="mt-3 rounded-lg bg-red-700 px-4 py-2 font-semibold text-white disabled:opacity-50">{busy ? "กำลังดำเนินการ…" : "ยืนยันลบผู้ใช้"}</button>
     </form>}
   </article>;
 }

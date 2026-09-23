@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import type { ShopRole } from "@/lib/dashboard-auth";
+import { listAdminUsers } from "@/lib/admin-users";
+import { getVerifiedProfile } from "@/lib/supabase/verified-profile";
 
 export const dynamic = "force-dynamic";
 
@@ -10,10 +12,10 @@ const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-
 
 async function activeAdminId() {
   const client = await createClient();
-  const { data: { user }, error } = await client.auth.getUser();
+  const { user, authError: error, profile, profileError } = await getVerifiedProfile(client);
+  if (error && (error.status ?? 0) >= 500) throw new Error("Auth unavailable");
   if (error || !user) return null;
-  const { data: profile } = await client.from("profiles")
-    .select("role,is_active").eq("id", user.id).maybeSingle();
+  if (profileError) throw new Error("Profile unavailable");
   return profile?.role === "admin" && profile.is_active ? user.id : null;
 }
 
@@ -31,28 +33,32 @@ function validPassword(password: unknown, confirmation: unknown): password is st
 }
 
 function response(message: string, status: number) {
-  return NextResponse.json({ error: message }, { status, headers: { "Cache-Control": "no-store" } });
+  const messages: Record<string, string> = {
+    "Forbidden": "บัญชีนี้ไม่มีสิทธิ์จัดการผู้ใช้",
+    "Invalid input": "ข้อมูลไม่ถูกต้อง กรุณาตรวจสอบอีกครั้ง",
+    "Invalid user": "ข้อมูลผู้ใช้ไม่ถูกต้อง",
+    "Invalid email, profile, or password confirmation": "กรุณาตรวจอีเมล ชื่อ สิทธิ์ และรหัสผ่านยืนยัน",
+    "Invalid password confirmation": "รหัสผ่านต้องยาว 8–72 ตัวอักษรและตรงกับรหัสผ่านยืนยัน",
+    "Cannot disable or demote your own admin account": "ไม่สามารถปิดใช้งานหรือลดสิทธิ์บัญชี Admin ของตัวเองได้",
+    "Cannot delete your own account": "ไม่สามารถลบบัญชีตัวเองได้",
+    "Cannot delete the last active admin": "ไม่สามารถลบ Admin คนสุดท้ายได้",
+    "Confirmation email does not match": "อีเมลยืนยันไม่ตรงกัน",
+    "User not found": "ไม่พบผู้ใช้ที่ต้องการ",
+    "Profile not found": "ไม่พบข้อมูลสิทธิ์ของผู้ใช้",
+    "Account access blocked; Auth ban needs retry": "ปิดสิทธิ์บัญชีแล้ว แต่ระงับการเข้าสู่ระบบไม่สำเร็จ กรุณาตรวจสถานะแล้วลองใหม่",
+    "Unable to activate user; remove the inactive account before retrying": "เปิดสิทธิ์ไม่สำเร็จ กรุณาตรวจและลบบัญชีที่ยังไม่เปิดใช้งานก่อนลองใหม่",
+    "Unable to activate user; account creation was rolled back": "เปิดสิทธิ์ไม่สำเร็จ ระบบยกเลิกบัญชีที่สร้างแล้ว กรุณาลองใหม่",
+  };
+  return NextResponse.json({ error: messages[message] ?? "ดำเนินการไม่สำเร็จชั่วคราว กรุณาตรวจข้อมูลแล้วลองใหม่" }, { status, headers: { "Cache-Control": "no-store" } });
 }
 
-export async function GET() {
+async function getUsers() {
   if (!await activeAdminId()) return response("Forbidden", 403);
-  const admin = createAdminClient();
-  const users = [];
-  for (let page = 1; page <= 100; page++) {
-    const { data, error } = await admin.auth.admin.listUsers({ page, perPage: 100 });
-    if (error) return response("Unable to load users", 500);
-    users.push(...data.users.map(({ id, email, last_sign_in_at }) => ({ id, email, lastSignInAt: last_sign_in_at })));
-    if (data.users.length < 100) break;
-  }
-  const { data: profiles, error } = await admin.from("profiles")
-    .select("id,full_name,role,is_active");
-  if (error) return response("Unable to load profiles", 500);
-  const byId = new Map(profiles?.map((p) => [p.id, p]));
-  return NextResponse.json({ users: users.map((user) => ({ ...user, profile: byId.get(user.id) ?? null })) },
+  return NextResponse.json({ users: await listAdminUsers() },
     { headers: { "Cache-Control": "no-store" } });
 }
 
-export async function POST(request: Request) {
+async function createUser(request: Request) {
   const actorId = await activeAdminId();
   if (!actorId) return response("Forbidden", 403);
   const input: unknown = await request.json().catch(() => null);
@@ -81,7 +87,7 @@ export async function POST(request: Request) {
     { status: 201, headers: { "Cache-Control": "no-store" } });
 }
 
-export async function PATCH(request: Request) {
+async function updateUser(request: Request) {
   const actorId = await activeAdminId();
   if (!actorId) return response("Forbidden", 403);
   const input: unknown = await request.json().catch(() => null);
@@ -98,8 +104,9 @@ export async function PATCH(request: Request) {
   if (action !== "update" || !validProfile({ role, fullName, isActive })) return response("Invalid input", 400);
   if (id === actorId && (role !== "admin" || !isActive)) return response("Cannot disable or demote your own admin account", 403);
   const { data: current, error: currentError } = await admin.from("profiles")
-    .select("is_active").eq("id", id).single();
-  if (currentError) return response("User not found", 404);
+    .select("is_active").eq("id", id).maybeSingle();
+  if (currentError) return response("Unable to load profiles", 503);
+  if (!current) return response("User not found", 404);
   // Inactive database permissions take effect immediately, including existing JWTs.
   if (isActive === false) {
     const { error } = await admin.rpc("manage_staff_profile", {
@@ -123,7 +130,7 @@ export async function PATCH(request: Request) {
   return NextResponse.json({ ok: true });
 }
 
-export async function DELETE(request: Request) {
+async function deleteUser(request: Request) {
   const actorId = await activeAdminId();
   if (!actorId) return response("Forbidden", 403);
   const input: unknown = await request.json().catch(() => null);
@@ -135,13 +142,15 @@ export async function DELETE(request: Request) {
   if (id === actorId) return response("Cannot delete your own account", 403);
   const admin = createAdminClient();
   const { data: userResult, error: userError } = await admin.auth.admin.getUserById(id);
-  if (userError || !userResult.user?.email) return response("User not found", 404);
+  if (userError && userError.status !== 404) return response("Unable to load users", 503);
+  if (!userResult.user?.email) return response("User not found", 404);
   if (confirmationEmail.trim().toLowerCase() !== userResult.user.email.toLowerCase()) {
     return response("Confirmation email does not match", 400);
   }
   const { data: profile, error: profileError } = await admin.from("profiles")
-    .select("role,is_active,full_name").eq("id", id).single();
-  if (profileError || !profile || !roles.has(profile.role as ShopRole)) return response("Profile not found", 404);
+    .select("role,is_active,full_name").eq("id", id).maybeSingle();
+  if (profileError) return response("Unable to load profiles", 503);
+  if (!profile || !roles.has(profile.role as ShopRole)) return response("Profile not found", 404);
   const wasActive = profile.is_active;
   const name = profile.full_name?.trim() || userResult.user.email.slice(0, 120);
   const { error: disableError } = await admin.rpc("manage_staff_profile", {
@@ -160,3 +169,14 @@ export async function DELETE(request: Request) {
   }
   return NextResponse.json({ ok: true }, { headers: { "Cache-Control": "no-store" } });
 }
+
+async function handle(action: () => Promise<NextResponse>) {
+  const start = performance.now();
+  try { return await action(); }
+  catch { return response("Unavailable", 503); }
+  finally { if (process.env.PERF_LOG === "1") console.info(`[perf] admin.users.api ${Math.round(performance.now() - start)}ms`); }
+}
+export async function GET() { return handle(getUsers); }
+export async function POST(request: Request) { return handle(() => createUser(request)); }
+export async function PATCH(request: Request) { return handle(() => updateUser(request)); }
+export async function DELETE(request: Request) { return handle(() => deleteUser(request)); }

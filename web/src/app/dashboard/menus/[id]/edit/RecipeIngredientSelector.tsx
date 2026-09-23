@@ -1,5 +1,9 @@
 "use client";
 
+import ActionForm from "@/components/action-form";
+import SubmitButton from "@/components/submit-button";
+
+
 import { useMemo, useState } from "react";
 
 type IngredientCategory = {
@@ -123,7 +127,7 @@ export default function RecipeIngredientSelector({
                     {ingredient?.name ?? "ไม่พบชื่อวัตถุดิบ"}
                   </p>
                   <div className="mt-3 flex flex-col gap-3 sm:flex-row">
-                    <form
+                    <ActionForm
                       action={saveIngredientAction}
                       className="flex flex-1 gap-2"
                     >
@@ -145,20 +149,20 @@ export default function RecipeIngredientSelector({
                       <span className="self-center text-sm text-zinc-500">
                         {ingredient?.unit ?? ""} / จาน
                       </span>
-                      <button className="rounded-lg bg-zinc-900 px-4 py-2 text-sm font-semibold text-white">
+                      <SubmitButton className="rounded-lg bg-zinc-900 px-4 py-2 text-sm font-semibold text-white">
                         อัปเดต
-                      </button>
-                    </form>
-                    <form action={removeIngredientAction}>
+                      </SubmitButton>
+                    </ActionForm>
+                    <ActionForm action={removeIngredientAction}>
                       <input
                         type="hidden"
                         name="ingredient_id"
                         value={item.ingredient_id}
                       />
-                      <button className="w-full rounded-lg border border-red-300 px-4 py-2 text-sm font-semibold text-red-600 hover:bg-red-50">
+                      <SubmitButton className="w-full rounded-lg border border-red-300 px-4 py-2 text-sm font-semibold text-red-600 hover:bg-red-50">
                         ลบออกจากสูตร
-                      </button>
-                    </form>
+                      </SubmitButton>
+                    </ActionForm>
                   </div>
                 </div>
               );
@@ -205,7 +209,7 @@ export default function RecipeIngredientSelector({
                   {isOpen && (
                     <div className="divide-y divide-zinc-100">
                       {group.ingredients.map((ingredient) => (
-                        <form
+                        <ActionForm
                           key={ingredient.id}
                           action={saveIngredientAction}
                           className="grid gap-3 p-4 sm:grid-cols-[1fr_150px_auto] sm:items-center"
@@ -233,10 +237,10 @@ export default function RecipeIngredientSelector({
                             aria-label={`ปริมาณ ${ingredient.name}`}
                             className="rounded-lg border border-zinc-300 px-3 py-2"
                           />
-                          <button className="rounded-lg bg-orange-500 px-4 py-2 font-semibold text-white hover:bg-orange-600">
+                          <SubmitButton className="rounded-lg bg-orange-500 px-4 py-2 font-semibold text-white hover:bg-orange-600">
                             เพิ่ม
-                          </button>
-                        </form>
+                          </SubmitButton>
+                        </ActionForm>
                       ))}
                     </div>
                   )}

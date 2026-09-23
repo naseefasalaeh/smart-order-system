@@ -1,9 +1,10 @@
+import ActionForm from "@/components/action-form";
+import SubmitButton from "@/components/submit-button";
 import Link from "next/link";
 import DashboardSidebar from "@/components/dashboard-sidebar";
 import MenuAddonPicker from "@/components/menu-addon-picker";
 import { notFound, redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
-import { createClient } from "@/lib/supabase/server";
 import { requireDashboardContext, requireDashboardRole } from "@/lib/dashboard-auth";
 import OptionGroupsEditor from "./OptionGroupsEditor";
 import RecipeIngredientSelector from "./RecipeIngredientSelector";
@@ -35,6 +36,7 @@ export default async function EditMenuPage({
     { data: categories, error: categoriesError },
     { data: ingredients, error: ingredientsError },
     { data: menuIngredients, error: menuIngredientsError },
+    groupsResult, optionsResult, addonsResult,
   ] = await Promise.all([
     supabase
       .from("menus")
@@ -42,7 +44,7 @@ export default async function EditMenuPage({
         "id, name, category_id, description, price, image_url, is_available"
       )
       .eq("id", id)
-      .single(),
+      .maybeSingle(),
 
     supabase
       .from("categories")
@@ -67,47 +69,37 @@ export default async function EditMenuPage({
       .from("menu_ingredients")
       .select("menu_id, ingredient_id, quantity_required")
       .eq("menu_id", id),
-  ]);
 
-  if (menuError || !menu) {
-    notFound();
-  }
-
-  const adminDb = supabase;
-  const [groupsResult, optionsResult] = await Promise.all([
-    adminDb
+    supabase
       .from("menu_option_groups")
       .select("id, name, kind, selection_type, is_required, min_select, max_select, max_total_quantity, display_order, is_active")
       .eq("menu_id", id)
       .order("display_order", { ascending: true })
       .order("id", { ascending: true }),
-    adminDb
+    supabase
       .from("menu_options")
       .select("id, group_id, addon_id, name, additional_price, sort_order, is_available, max_quantity")
       .eq("menu_id", id)
       .order("sort_order", { ascending: true })
       .order("id", { ascending: true }),
+      supabase.from("addons").select("id,name,category,additional_price,is_available,max_quantity").order("name"),
   ]);
+
+  if (menuError) throw new Error("โหลดข้อมูลไม่สำเร็จชั่วคราว กรุณาลองใหม่");
+  if (!menu) notFound();
+
   const optionIds = (optionsResult.data ?? []).map((option) => Number(option.id));
   const optionRecipesResult = optionIds.length > 0
-    ? await adminDb
+    ? await supabase
         .from("menu_option_ingredients")
         .select("menu_option_id, ingredient_id, quantity_required")
         .in("menu_option_id", optionIds)
     : { data: [], error: null };
 
-  const addonsResult = await supabase.from("addons").select("id,name,category,additional_price,is_available,max_quantity").order("name");
 
   async function updateMenu(formData: FormData) {
     "use server";
-    await requireDashboardRole(["admin"]);
-
-    const supabase = await createClient();
-    const {
-      data: { user: actionUser },
-    } = await supabase.auth.getUser();
-
-    if (!actionUser) redirect("/login");
+    const supabase = await requireDashboardRole(["admin"]);
 
     const name = String(formData.get("name") ?? "").trim();
     const categoryId = String(
@@ -158,14 +150,7 @@ export default async function EditMenuPage({
 
   async function addIngredient(formData: FormData) {
     "use server";
-    await requireDashboardRole(["admin"]);
-
-    const supabase = await createClient();
-    const {
-      data: { user: actionUser },
-    } = await supabase.auth.getUser();
-
-    if (!actionUser) redirect("/login");
+    const supabase = await requireDashboardRole(["admin"]);
 
     const ingredientId = String(
       formData.get("ingredient_id") ?? ""
@@ -218,14 +203,7 @@ export default async function EditMenuPage({
 
   async function removeIngredient(formData: FormData) {
     "use server";
-    await requireDashboardRole(["admin"]);
-
-    const supabase = await createClient();
-    const {
-      data: { user: actionUser },
-    } = await supabase.auth.getUser();
-
-    if (!actionUser) redirect("/login");
+    const supabase = await requireDashboardRole(["admin"]);
 
     const ingredientId = String(
       formData.get("ingredient_id") ?? ""
@@ -323,7 +301,7 @@ export default async function EditMenuPage({
             แก้ไขข้อมูล ราคา หมวดหมู่ และสถานะการขาย
           </p>
 
-          <form action={updateMenu} className="mt-8 space-y-5">
+          <ActionForm action={updateMenu} className="mt-8 space-y-5">
             {addonsResult.error || optionsResult.error || ingredientsError ? <p role="alert">โหลดตัวเลือกเสริมไม่สำเร็จ กรุณาโหลดหน้าใหม่ก่อนบันทึก</p> : <MenuAddonPicker meatRequired={(groupsResult.data ?? []).some((g) => g.kind === "meat" && g.is_required)} addons={addonsResult.data ?? []} ingredients={ingredients ?? []} selectedIds={(optionsResult.data ?? []).filter((o) => o.addon_id !== null && o.is_available).map((o) => Number(o.addon_id))} />}
             <div>
               <label
@@ -445,14 +423,14 @@ export default async function EditMenuPage({
             </label>
 
             <div className="flex justify-end pt-3">
-              <button
+              <SubmitButton
                 type="submit"
                 className="rounded-xl bg-orange-500 px-5 py-3 font-semibold text-white hover:bg-orange-600"
               >
                 บันทึกข้อมูลเมนู
-              </button>
+              </SubmitButton>
             </div>
-          </form>
+          </ActionForm>
 
         </section>
 

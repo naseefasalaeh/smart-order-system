@@ -42,7 +42,10 @@ export async function deleteCatalogItem(formData: FormData): Promise<DeleteResul
     }
     const result = deletionResult(response.data);
     if (result.status === "deleted") {
-      revalidatePath("/dashboard", "layout");
+      revalidatePath("/dashboard");
+      revalidatePath("/dashboard/menus");
+      revalidatePath("/dashboard/ingredients");
+      revalidatePath("/dashboard/addons");
       revalidatePath("/table", "layout");
     }
     return result;

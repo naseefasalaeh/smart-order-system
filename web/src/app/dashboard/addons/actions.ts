@@ -2,14 +2,10 @@
 
 import { isAddonCategory } from "@/lib/addon-categories";
 import { revalidatePath } from "next/cache";
-import { createClient } from "@/lib/supabase/server";
 import { requireDashboardRole } from "@/lib/dashboard-auth";
 
 export async function saveAddon(form: FormData) {
-  await requireDashboardRole(["admin"]);
-  const db = await createClient();
-  const { data: { user } } = await db.auth.getUser();
-  if (!user) return { error: "กรุณาเข้าสู่ระบบใหม่" };
+  const db = await requireDashboardRole(["admin"]);
   const id = form.get("id") ? Number(form.get("id")) : null;
   const name = String(form.get("name") ?? "").trim();
   const category = String(form.get("category") ?? "");
@@ -32,7 +28,8 @@ export async function saveAddon(form: FormData) {
     p_recipe: ingredientIds.map((ingredient_id, i) => ({ ingredient_id, quantity_required: quantities[i] })),
   });
   if (error) return { error: error.code === "23505" ? "ชื่อซ้ำหรือวัตถุดิบซ้ำในสูตร" : "บันทึกไม่สำเร็จ ตัวเลือกที่เปิดขายต้องมีสูตร กรุณาตรวจข้อมูลแล้วลองใหม่" };
-  revalidatePath("/dashboard", "layout");
+  revalidatePath("/dashboard/addons");
+  revalidatePath("/dashboard/menus");
   revalidatePath("/table", "layout");
   return { addon: { id: Number(data), category, name, additional_price: price, is_available: form.get("is_available") === "on", max_quantity: maxQuantity, display_order: displayOrder } };
 }

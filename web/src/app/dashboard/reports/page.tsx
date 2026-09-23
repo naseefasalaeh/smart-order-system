@@ -8,6 +8,7 @@ const statusLabels: Record<string, string> = {
   confirmed: "รอเริ่มทำ",
   preparing: "กำลังทำ",
   ready: "พร้อมเสิร์ฟ",
+  served: "เสิร์ฟแล้ว รอชำระเงิน",
   completed: "เสร็จสิ้น",
   cancelled: "ยกเลิก",
 };
