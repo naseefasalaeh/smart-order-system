@@ -7,7 +7,7 @@ import { requireDashboardContext } from "@/lib/dashboard-auth";
 export default async function IngredientsPage({ searchParams }: {
   searchParams: Promise<{ success?: string }>;
 }) {
-  const { db: supabase, role } = await requireDashboardContext(["admin"]);
+  const { db: supabase, role, fullName } = await requireDashboardContext(["admin"]);
   const { success } = await searchParams;
 
   const [ingredientsResult, categoriesResult] = await Promise.all([
@@ -47,7 +47,7 @@ export default async function IngredientsPage({ searchParams }: {
   return (
     <main className="min-h-screen bg-orange-50 lg:flex">
       <OrderRealtimeRefresh channelName="ingredients-order-stock" fallbackIntervalMs={5_000} pollWhenSubscribed />
-      <DashboardSidebar role={role} activePath="/dashboard/ingredients" />
+      <DashboardSidebar role={role} fullName={fullName} activePath="/dashboard/ingredients" />
 
       <section className="flex-1 p-6 sm:p-8">
         <div className="mx-auto max-w-7xl">

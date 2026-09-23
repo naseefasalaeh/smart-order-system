@@ -6,7 +6,6 @@ import MenuAddonPicker from "@/components/menu-addon-picker";
 import { notFound, redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { requireDashboardContext, requireDashboardRole } from "@/lib/dashboard-auth";
-import OptionGroupsEditor from "./OptionGroupsEditor";
 import RecipeIngredientSelector from "./RecipeIngredientSelector";
 
 type EditMenuPageProps = {
@@ -24,10 +23,10 @@ export default async function EditMenuPage({
   params,
   searchParams,
 }: EditMenuPageProps) {
-  const { db: supabase, role } = await requireDashboardContext(["admin"]);
+  const { db: supabase, role, fullName } = await requireDashboardContext(["admin"]);
   const { id } = await params;
   const query = await searchParams;
-  const activeTab = ["info", "recipe", "options"].includes(query.tab ?? "")
+  const activeTab = ["info", "recipe"].includes(query.tab ?? "")
     ? query.tab
     : "info";
 
@@ -72,30 +71,19 @@ export default async function EditMenuPage({
 
     supabase
       .from("menu_option_groups")
-      .select("id, name, kind, selection_type, is_required, min_select, max_select, max_total_quantity, display_order, is_active")
+      .select("kind, is_required")
       .eq("menu_id", id)
-      .order("display_order", { ascending: true })
-      .order("id", { ascending: true }),
+      .eq("kind", "meat"),
     supabase
       .from("menu_options")
-      .select("id, group_id, addon_id, name, additional_price, sort_order, is_available, max_quantity")
+      .select("addon_id, is_available")
       .eq("menu_id", id)
-      .order("sort_order", { ascending: true })
-      .order("id", { ascending: true }),
+      .not("addon_id", "is", null),
       supabase.from("addons").select("id,name,category,additional_price,is_available,max_quantity").order("name"),
   ]);
 
   if (menuError) throw new Error("โหลดข้อมูลไม่สำเร็จชั่วคราว กรุณาลองใหม่");
   if (!menu) notFound();
-
-  const optionIds = (optionsResult.data ?? []).map((option) => Number(option.id));
-  const optionRecipesResult = optionIds.length > 0
-    ? await supabase
-        .from("menu_option_ingredients")
-        .select("menu_option_id, ingredient_id, quantity_required")
-        .in("menu_option_id", optionIds)
-    : { data: [], error: null };
-
 
   async function updateMenu(formData: FormData) {
     "use server";
@@ -123,7 +111,7 @@ export default async function EditMenuPage({
       redirect(`/dashboard/menus/${id}/edit?tab=info&error=${encodeURIComponent("กรุณากรอกข้อมูลเมนูให้ถูกต้อง")}`);
     }
 
-    if (addonsResult.error || optionsResult.error || ingredientsError) redirect(`/dashboard/menus/${id}/edit?error=${encodeURIComponent("โหลดตัวเลือกเสริมไม่สำเร็จ")}`);
+    if (addonsResult.error || groupsResult.error || optionsResult.error || ingredientsError) redirect(`/dashboard/menus/${id}/edit?error=${encodeURIComponent("โหลดตัวเลือกเสริมไม่สำเร็จ")}`);
     const { error } = await supabase.rpc("save_menu_with_addons", {
       p_id: Number(id), p_addon_ids: formData.getAll("addon_ids").map(Number),
       p_values: {
@@ -231,15 +219,8 @@ export default async function EditMenuPage({
   const dataError =
     categoriesError ||
     ingredientsError ||
-    menuIngredientsError;
+    menuIngredientsError || groupsResult.error || optionsResult.error || addonsResult.error;
   if (dataError) console.error("โหลดข้อมูลหน้าแก้ไขเมนูไม่สำเร็จ", dataError);
-  if (groupsResult.error || optionsResult.error || optionRecipesResult.error) {
-    console.error("โหลดข้อมูลกลุ่มตัวเลือกไม่สำเร็จ", {
-      groupsError: groupsResult.error,
-      optionsError: optionsResult.error,
-      optionRecipesError: optionRecipesResult.error,
-    });
-  }
   const normalizedIngredients = (ingredients ?? []).map((ingredient) => ({
     ...ingredient,
     ingredient_categories: Array.isArray(ingredient.ingredient_categories)
@@ -249,7 +230,7 @@ export default async function EditMenuPage({
 
   return (
     <div className="min-h-screen bg-orange-50 lg:flex">
-    <DashboardSidebar role={role} activePath="/dashboard/menus" />
+    <DashboardSidebar role={role} fullName={fullName} activePath="/dashboard/menus" />
     <main className="min-w-0 flex-1 px-6 py-10">
       <div className="mx-auto max-w-3xl">
         <Link
@@ -265,11 +246,10 @@ export default async function EditMenuPage({
           </div>
         )}
 
-        <nav className="mt-6 grid grid-cols-3 overflow-hidden rounded-xl border border-orange-200 bg-white" aria-label="ส่วนแก้ไขเมนู">
+        <nav className="mt-6 grid grid-cols-2 overflow-hidden rounded-xl border border-orange-200 bg-white" aria-label="ส่วนแก้ไขเมนู">
           {[
             ["info", "ข้อมูลเมนู"],
             ["recipe", "สูตรพื้นฐาน"],
-            ["options", "กลุ่มตัวเลือก"],
           ].map(([tab, label]) => (
             <Link
               key={tab}
@@ -302,7 +282,7 @@ export default async function EditMenuPage({
           </p>
 
           <ActionForm action={updateMenu} className="mt-8 space-y-5">
-            {addonsResult.error || optionsResult.error || ingredientsError ? <p role="alert">โหลดตัวเลือกเสริมไม่สำเร็จ กรุณาโหลดหน้าใหม่ก่อนบันทึก</p> : <MenuAddonPicker meatRequired={(groupsResult.data ?? []).some((g) => g.kind === "meat" && g.is_required)} addons={addonsResult.data ?? []} ingredients={ingredients ?? []} selectedIds={(optionsResult.data ?? []).filter((o) => o.addon_id !== null && o.is_available).map((o) => Number(o.addon_id))} />}
+            {addonsResult.error || groupsResult.error || optionsResult.error || ingredientsError ? <p role="alert">โหลดตัวเลือกเสริมไม่สำเร็จ กรุณาโหลดหน้าใหม่ก่อนบันทึก</p> : <MenuAddonPicker meatRequired={(groupsResult.data ?? []).some((g) => g.kind === "meat" && g.is_required)} addons={addonsResult.data ?? []} ingredients={ingredients ?? []} selectedIds={(optionsResult.data ?? []).filter((o) => o.addon_id !== null && o.is_available).map((o) => Number(o.addon_id))} />}
             <div>
               <label
                 htmlFor="name"
@@ -459,51 +439,6 @@ export default async function EditMenuPage({
           />
         </section>
 
-        {activeTab === "options" && (
-          <section className="mt-6 rounded-2xl bg-white p-6 shadow-sm sm:p-8">
-            <p className="font-semibold text-orange-500">กลุ่มตัวเลือก</p>
-            <h2 className="mt-1 text-2xl font-bold text-zinc-900">ตัวเลือกและสูตรวัตถุดิบ</h2>
-            <p className="mt-2 text-zinc-600">ตั้งกฎการเลือก ราคา จำนวนสูงสุด สถานะขาย และสูตรต่อหนึ่งตัวเลือก โดยไม่มีการลบข้อมูลออเดอร์เดิม</p>
-            {(groupsResult.error || optionsResult.error || optionRecipesResult.error) ? (
-              <div className="mt-6 rounded-xl bg-red-50 p-4 text-red-700">โหลดกลุ่มตัวเลือกไม่สำเร็จ กรุณาลองใหม่</div>
-            ) : (
-              <OptionGroupsEditor
-                menuId={Number(id)}
-                groups={(groupsResult.data ?? []).filter((group) => group.kind === "standard").map((group) => ({
-                  id: Number(group.id),
-                  name: String(group.name),
-                  kind: group.kind === "meat" ? "meat" : "standard",
-                  selection_type: group.selection_type === "single" ? "single" : "multiple",
-                  is_required: Boolean(group.is_required),
-                  min_select: Number(group.min_select),
-                  max_select: Number(group.max_select),
-                  max_total_quantity: Number(group.max_total_quantity),
-                  display_order: Number(group.display_order),
-                  is_active: Boolean(group.is_active),
-                }))}
-                options={(optionsResult.data ?? []).filter((option) => option.addon_id === null).map((option) => ({
-                  id: Number(option.id),
-                  group_id: option.group_id === null ? null : Number(option.group_id),
-                  name: String(option.name),
-                  additional_price: Number(option.additional_price),
-                  sort_order: Number(option.sort_order ?? 0),
-                  is_available: Boolean(option.is_available),
-                  max_quantity: Number(option.max_quantity ?? 3),
-                }))}
-                ingredients={normalizedIngredients.map((ingredient) => ({
-                  id: Number(ingredient.id),
-                  name: String(ingredient.name),
-                  unit: String(ingredient.unit),
-                }))}
-                recipes={(optionRecipesResult.data ?? []).map((recipe) => ({
-                  menu_option_id: Number(recipe.menu_option_id),
-                  ingredient_id: Number(recipe.ingredient_id),
-                  quantity_required: Number(recipe.quantity_required),
-                }))}
-              />
-            )}
-          </section>
-        )}
       </div>
     </main>
     </div>

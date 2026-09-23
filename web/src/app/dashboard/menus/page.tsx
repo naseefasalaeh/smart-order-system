@@ -9,7 +9,7 @@ import { revalidatePath } from "next/cache";
 export default async function MenusPage({ searchParams }: {
   searchParams: Promise<{ success?: string; error?: string; q?: string; category?: string; status?: string }>;
 }) {
-  const { db: supabase, role } = await requireDashboardContext(["admin"]);
+  const { db: supabase, role, fullName } = await requireDashboardContext(["admin"]);
   const { success, error: filterError, q = "", category = "", status = "" } = await searchParams;
 
   const [
@@ -83,7 +83,7 @@ export default async function MenusPage({ searchParams }: {
 
   return (
     <main className="min-h-screen bg-orange-50 lg:flex">
-      <DashboardSidebar role={role} activePath="/dashboard/menus" />
+      <DashboardSidebar role={role} fullName={fullName} activePath="/dashboard/menus" />
 
       <section className="min-w-0 flex-1 p-6 sm:p-8">
         <div className="mx-auto max-w-7xl">

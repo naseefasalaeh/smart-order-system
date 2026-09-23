@@ -18,7 +18,7 @@ const statusColors: Record<string, string> = {
 };
 
 const allowed: ShopRole[] = ["admin", "kitchen_staff"];
-export default function OrdersView({ initial, userId, role }: { initial: Awaited<ReturnType<typeof loadKitchenOrders>>; userId: string; role: ShopRole;  }) {
+export default function OrdersView({ initial, userId, fullName, role }: { initial: Awaited<ReturnType<typeof loadKitchenOrders>>; userId: string; fullName: string; role: ShopRole;  }) {
   const load = loadKitchenOrders;
   const { data, refresh, refreshAfterMutation, error: liveError } = useLiveOrderView(initial, userId, role, allowed, load);
   const { orders, error } = data;
@@ -27,7 +27,7 @@ export default function OrdersView({ initial, userId, role }: { initial: Awaited
     <main className="min-h-screen bg-orange-50 lg:flex">
       <OrderRealtimeRefresh onRefresh={refresh} channelName="staff-kitchen" />
 
-      <DashboardSidebar role={role} activePath="/dashboard/kitchen" />
+      <DashboardSidebar role={role} fullName={fullName} activePath="/dashboard/kitchen" />
 
       <section className="flex-1 p-6 sm:p-8">
         <div className="mx-auto max-w-7xl">

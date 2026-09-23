@@ -7,7 +7,7 @@ import { OrderViewRefresh, OrderViewRetry, useLiveOrderView } from "@/components
 import type { ShopRole } from "@/lib/dashboard-auth";
 import { loadReadyOrders } from "@/lib/order-views";
 const allowed: ShopRole[] = ["admin", "staff"];
-export default function OrdersView({ initial, userId, role }: { initial: Awaited<ReturnType<typeof loadReadyOrders>>; userId: string; role: ShopRole;  }) {
+export default function OrdersView({ initial, userId, fullName, role }: { initial: Awaited<ReturnType<typeof loadReadyOrders>>; userId: string; fullName: string; role: ShopRole;  }) {
   const load = loadReadyOrders;
   const { data, refresh, refreshAfterMutation, error: liveError } = useLiveOrderView(initial, userId, role, allowed, load);
   const { orders, error } = data;
@@ -17,7 +17,7 @@ export default function OrdersView({ initial, userId, role }: { initial: Awaited
     <OrderViewRefresh.Provider value={refreshAfterMutation}>
     <main className="min-h-screen bg-orange-50 text-zinc-900 lg:flex">
       <OrderRealtimeRefresh onRefresh={refresh} channelName="staff-ready-orders" fallbackIntervalMs={5_000} pollWhenSubscribed />
-      <DashboardSidebar role={role} activePath="/dashboard/ready" />
+      <DashboardSidebar role={role} fullName={fullName} activePath="/dashboard/ready" />
       <section className="min-w-0 flex-1 p-6 sm:p-8">
         <div className="mx-auto max-w-7xl">
           {liveError && <div role="alert" className="mb-5 rounded-xl bg-red-50 p-4 text-red-700">{liveError}<OrderViewRetry refresh={refresh} /></div>}

@@ -31,7 +31,7 @@ function formatCurrency(value: number) {
 }
 
 export default async function ReportsPage({ searchParams }: { searchParams: Promise<{ month?: string }> }) {
-  const { db: supabase, role } = await requireDashboardContext(["admin"]);
+  const { db: supabase, role, fullName } = await requireDashboardContext(["admin"]);
   const { month: requestedMonth } = await searchParams;
   const month = bangkokMonthRange(requestedMonth ?? "") ? requestedMonth! : bangkokCurrentMonth();
   const { start, end } = bangkokMonthRange(month)!;
@@ -273,7 +273,7 @@ export default async function ReportsPage({ searchParams }: { searchParams: Prom
 
   return (
     <main className="min-h-screen bg-orange-50 lg:flex">
-      <DashboardSidebar role={role} activePath="/dashboard/reports" />
+      <DashboardSidebar role={role} fullName={fullName} activePath="/dashboard/reports" />
 
       <section className="min-w-0 flex-1 p-6 sm:p-8">
         <div className="mx-auto max-w-7xl">

@@ -32,7 +32,7 @@ const dashboardIdentity = cache(async () => {
     redirect("/access-denied");
   }
   logDuration("dashboard.auth.total", totalStarted);
-  return { db, user, role };
+  return { db, user, role, fullName: (profile.full_name as string | null)?.trim() || "ผู้ใช้งาน" };
 });
 
 export async function requireDashboardContext(allowed: ShopRole[]) {

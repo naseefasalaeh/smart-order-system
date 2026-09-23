@@ -17,7 +17,7 @@ function newIngredientErrorRedirect(message: string): never {
 export default async function NewIngredientPage({
   searchParams,
 }: NewIngredientPageProps) {
-  const { db: supabase, role } = await requireDashboardContext(["admin"]);
+  const { db: supabase, role, fullName } = await requireDashboardContext(["admin"]);
   const { error: errorMessage } = await searchParams;
 
   const { data: categories, error: categoriesError } = await supabase
@@ -96,7 +96,7 @@ export default async function NewIngredientPage({
 
   return (
     <div className="min-h-screen bg-orange-50 lg:flex">
-    <DashboardSidebar role={role} activePath="/dashboard/ingredients" />
+    <DashboardSidebar role={role} fullName={fullName} activePath="/dashboard/ingredients" />
     <main className="min-w-0 flex-1 px-6 py-10">
       <div className="mx-auto max-w-2xl">
         <Link

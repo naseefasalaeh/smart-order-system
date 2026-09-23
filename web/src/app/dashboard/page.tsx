@@ -23,7 +23,7 @@ const statusColors: Record<string, string> = {
 };
 
 export default async function DashboardPage() {
-  const { db: supabase, role } = await requireDashboardContext(["admin", "staff"]);
+  const { db: supabase, role, fullName } = await requireDashboardContext(["admin", "staff"]);
 
   // จุดเริ่มต้นและสิ้นสุดของวันนี้ในประเทศไทย แล้วแปลงเป็น UTC สำหรับค้นฐานข้อมูล
   const now = new Date();
@@ -154,7 +154,7 @@ export default async function DashboardPage() {
 
   return (
     <main className="min-h-screen bg-zinc-100 lg:flex">
-      <DashboardSidebar role={role} activePath="/dashboard" />
+      <DashboardSidebar role={role} fullName={fullName} activePath="/dashboard" />
 
       <section className="flex-1 p-6 sm:p-8">
         <div className="mx-auto max-w-7xl">

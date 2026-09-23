@@ -4,5 +4,5 @@ type PageProps = { params: Promise<{ id: string }> };
 
 export default async function MenuOptionsPage({ params }: PageProps) {
   const { id } = await params;
-  redirect(`/dashboard/menus/${id}/edit?tab=options`);
+  redirect(`/dashboard/menus/${id}/edit?tab=info`);
 }

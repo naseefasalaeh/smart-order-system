@@ -3,7 +3,7 @@ import { createServer } from 'node:http';
 export const adminId = '00000000-0000-4000-8000-000000000091';
 export const orderId = '00000000-0000-4000-8000-000000000001';
 export async function startMock(port = 4401) {
-  const state = { requests: [], role: 'admin', active: true, profileError: false, authError: false, failWrite: false, queryError: '', delay: 100, status: 'confirmed', updatedAt: new Date().toISOString() };
+  const state = { requests: [], rpcCalls: [], catalog: {}, fullName: 'TEST Admin', role: 'admin', active: true, profileError: false, authError: false, failWrite: false, queryError: '', delay: 100, status: 'confirmed', updatedAt: new Date().toISOString() };
   const user = (id = adminId) => ({ id, email: 'admin@example.invalid', aud: 'authenticated', role: 'authenticated', created_at: new Date().toISOString(), app_metadata: {}, user_metadata: {} });
   const session = () => ({ access_token: `${Buffer.from(JSON.stringify({ alg: 'HS256', typ: 'JWT' })).toString('base64url')}.${Buffer.from(JSON.stringify({ sub: adminId, role: 'authenticated', exp: Math.floor(Date.now()/1000)+3600 })).toString('base64url')}.mock`, refresh_token: 'local-test-only', expires_in: 3600, expires_at: Math.floor(Date.now()/1000)+3600, token_type: 'bearer', user: user() });
   const ingredient = { id: 1, name: 'TEST rice', unit: 'กรัม', stock_quantity: 100, minimum_stock: 5, category_id: 1, ingredient_categories: { id: 1, name: 'อื่น ๆ', display_order: 1 } };
@@ -30,6 +30,7 @@ export async function startMock(port = 4401) {
     else if (path === '/auth/v1/admin/users') data = req.method === 'GET' ? { users: profiles.map(p => user(p.id)), aud: 'authenticated', next_page: null, total: profiles.length } : user(profiles[1].id);
     else if (path.startsWith('/auth/v1/admin/users/')) data = user(path.split('/').at(-1));
     else if (path.startsWith('/rest/v1/rpc/')) {
+      state.rpcCalls.push({ path, body });
       state.updatedAt = new Date().toISOString();
       if (path.endsWith('/advance_order_status')) state.status = body.p_next;
       if (path.endsWith('/serve_order')) { state.status = 'served'; state.servedAt = state.updatedAt; }
@@ -43,9 +44,9 @@ export async function startMock(port = 4401) {
       order.dining_type = state.diningType || 'dine_in';
       order.served_at = state.servedAt || null;
       const all = { profiles, orders: [order], menus: [menu], ingredients: [ingredient], categories: [{ id: 1, name: 'TEST category' }], ingredient_categories: [{ id: 1, name: 'อื่น ๆ', display_order: 1, is_active: true }], restaurant_tables: [table], menu_ingredients: [{ id: 1, menu_id: 1, ingredient_id: 1, quantity_required: 1 }], payments: [], addons: [], menu_options: [], menu_option_groups: [], menu_option_ingredients: [] };
-      data = all[resource] || [];
+      data = state.catalog[resource] ?? all[resource] ?? [];
       if (url.searchParams.get('id') === 'eq.999') data = [];
-      if (resource === 'profiles' && (url.searchParams.has('id') || req.headers.authorization !== 'Bearer local-fixture-service-key')) data = [{ ...profiles[0], role: state.role, is_active: state.active }];
+      if (resource === 'profiles' && (url.searchParams.has('id') || req.headers.authorization !== 'Bearer local-fixture-service-key')) data = [{ ...profiles[0], full_name: state.fullName, role: state.role, is_active: state.active }];
       if (resource === 'orders' && url.searchParams.has('status')) {
         const filter = url.searchParams.get('status');
         if (!(filter === `eq.${state.status}` || filter.includes(state.status))) data = [];

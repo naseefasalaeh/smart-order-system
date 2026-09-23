@@ -27,7 +27,7 @@ const statusColors: Record<string, string> = {
 };
 
 const allowed: ShopRole[] = ["admin", "staff"];
-export default function OrdersView({ initial, userId, role, status, date }: { initial: Awaited<ReturnType<typeof loadOrders>>; userId: string; role: ShopRole; status?: string; date?: string; }) {
+export default function OrdersView({ initial, userId, fullName, role, status, date }: { initial: Awaited<ReturnType<typeof loadOrders>>; userId: string; fullName: string; role: ShopRole; status?: string; date?: string; }) {
   const load = useCallback((db: SupabaseClient) => loadOrders(db, status, date), [status, date]);
   const { data, refresh, refreshAfterMutation, error: liveError } = useLiveOrderView(initial, userId, role, allowed, load);
   const { orders, activeStatus, isHistory, visibleFilters, selectedDay, dayLabel, daySales, error } = data;
@@ -40,7 +40,7 @@ export default function OrdersView({ initial, userId, role, status, date }: { in
         fallbackIntervalMs={5_000} pollWhenSubscribed
       />
 
-      <DashboardSidebar role={role} activePath="/dashboard/orders" />
+      <DashboardSidebar role={role} fullName={fullName} activePath="/dashboard/orders" />
 
       <section className="flex-1 p-6 sm:p-8">
         <div className="mx-auto max-w-7xl">

@@ -3,14 +3,14 @@ import { requireDashboardContext } from "@/lib/dashboard-auth";
 import TablesClient from "./TablesClient";
 
 export default async function TablesPage({ searchParams }: { searchParams: Promise<{ error?: string; success?: string }> }) {
-  const { db, role } = await requireDashboardContext(["admin"]);
+  const { db, role, fullName } = await requireDashboardContext(["admin"]);
   const { error: formError, success } = await searchParams;
   const { data: tables, error } = await db.from("restaurant_tables")
     .select("id,table_number,status").order("table_number", { ascending: true });
 
   return (
     <main className="min-h-screen bg-zinc-100 text-zinc-900 lg:flex">
-      <DashboardSidebar role={role} activePath="/dashboard/tables" />
+      <DashboardSidebar role={role} fullName={fullName} activePath="/dashboard/tables" />
       <section className="min-w-0 flex-1 p-6 sm:p-8">
         <div className="mx-auto max-w-7xl">
           <header>
