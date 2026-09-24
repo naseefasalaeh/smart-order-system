@@ -40,7 +40,7 @@ export default function OrdersView({ initial, userId, fullName, role, status, da
         fallbackIntervalMs={5_000} pollWhenSubscribed
       />
 
-      <DashboardSidebar role={role} fullName={fullName} activePath="/dashboard/orders" />
+      <DashboardSidebar role={role} fullName={fullName} activePath={activeStatus === "served" ? "/dashboard/orders?status=served" : "/dashboard/orders"} />
 
       <section className="flex-1 p-6 sm:p-8">
         <div className="mx-auto max-w-7xl">

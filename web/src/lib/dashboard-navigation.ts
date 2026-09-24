@@ -1,4 +1,4 @@
-const staffPages = new Set(["/dashboard", "/dashboard/orders", "/dashboard/ready"]);
+const staffPages = new Set(["/dashboard", "/dashboard/orders", "/dashboard/orders?status=served", "/dashboard/ready"]);
 const kitchenPages = new Set(["/dashboard/kitchen"]);
 
 export function dashboardMenuForRole<T extends { href: string }>(items: T[], role?: string): T[] {

@@ -6,8 +6,10 @@ import assert from 'node:assert/strict';
 import { chromium } from 'playwright';
 import { startMock } from './helpers/dashboard-mock.mjs';
 import { checkLiveDashboard } from './helpers/dashboard-live-checks.mjs';
+import { checkSidebarNavigation } from './helpers/sidebar-navigation-checks.mjs';
 
-const dir = '.test-artifacts/user-identity';
+const navigationOnly = process.argv.includes('--navigation-only');
+const dir = navigationOnly ? '.test-artifacts/sidebar-navigation' : '.test-artifacts/user-identity';
 const appDir = resolve(`${dir}/app-${Date.now()}`);
 mkdirSync(appDir, { recursive: true });
 for (const file of ['src', 'public', 'package.json', 'package-lock.json', 'tsconfig.json', 'next-env.d.ts', 'next.config.ts', 'postcss.config.mjs']) {
@@ -36,6 +38,10 @@ try {
   const page = await context.newPage();
   page.setDefaultTimeout(20000);
   page.on('dialog', dialog => dialog.accept());
+  if (navigationOnly) {
+    await checkSidebarNavigation({ page, context, mock, results, dir });
+    console.log('PASS sidebar navigation, active state and permissions on desktop/mobile');
+  } else {
   const routes = [
     ['/dashboard', ['admin', 'staff']], ['/dashboard/orders', ['admin', 'staff']],
     ['/dashboard/ready', ['admin', 'staff']], ['/dashboard/kitchen', ['admin', 'kitchen_staff']],
@@ -111,6 +117,7 @@ try {
   // This copy is isolated from the workspace; skip the helper's workspace HMR edit.
   await checkLiveDashboard({ context, page, mock, results, mode: 'fixture' });
   console.log('PASS identity, menu UI, roles and live dashboard regression');
+  }
 } catch (error) {
   results.error = String(error.stack || error);
   console.error(error);

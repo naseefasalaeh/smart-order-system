@@ -6,6 +6,7 @@ import type { ShopRole } from "@/lib/dashboard-auth";
 const menuItems = [
   { name: "ภาพรวม", href: "/dashboard" },
   { name: "ออเดอร์", href: "/dashboard/orders" },
+  { name: "รอชำระเงิน", href: "/dashboard/orders?status=served" },
   { name: "คิวครัว", href: "/dashboard/kitchen" },
   { name: "พร้อมเสิร์ฟ", href: "/dashboard/ready" },
   { name: "เมนูอาหาร", href: "/dashboard/menus" },
