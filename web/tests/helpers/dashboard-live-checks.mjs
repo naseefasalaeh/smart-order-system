@@ -35,12 +35,14 @@ export async function checkLiveDashboard({ context, page, mock, results, mode })
     assert.fail(label);
   }
   async function goto(path) {
-    await page.goto(`http://localhost:4400${path}`);
+    const response = await page.goto(`http://localhost:4400${path}`);
     await page.waitForTimeout(800);
+    return response;
   }
 
   // A failed initial order query is retryable on every live view, without a 404.
   for (const route of ['kitchen', 'orders', 'ready']) {
+    mock.state.role = route === 'kitchen' ? 'kitchen_staff' : 'staff';
     mock.state.queryError = 'orders';
     await goto(`/dashboard/${route}`);
     await page.getByRole('alert').filter({ hasText: /โหลด/ }).first().waitFor();
@@ -55,14 +57,15 @@ export async function checkLiveDashboard({ context, page, mock, results, mode })
   for (const role of ['admin', 'staff', 'kitchen_staff']) {
     mock.state.role = role;
     for (const [route, allowed] of [
-      ['/dashboard', ['admin', 'staff']], ['/dashboard/orders', ['admin', 'staff']],
-      ['/dashboard/ready', ['admin', 'staff']], ['/dashboard/kitchen', ['admin', 'kitchen_staff']],
+      ['/dashboard', ['admin']], ['/dashboard/orders', ['staff']],
+      ['/dashboard/ready', ['staff']], ['/dashboard/kitchen', ['kitchen_staff']],
       ['/dashboard/users', ['admin']], ['/dashboard/menus', ['admin']],
       ['/dashboard/ingredients', ['admin']], ['/dashboard/tables', ['admin']],
       ['/dashboard/addons', ['admin']], ['/dashboard/reports', ['admin']],
     ]) {
-      await goto(route);
-      assert.equal(new URL(page.url()).pathname, allowed.includes(role) ? route : '/access-denied', `${role} ${route}`);
+      const response = await goto(route);
+      assert.equal(new URL(page.url()).pathname, route, `${role} ${route}`);
+      assert.equal(response.status(), allowed.includes(role) ? 200 : 403);
       assert.doesNotMatch(await page.locator('body').innerText(), /This page could not be found|โหลดข้อมูลไม่สำเร็จชั่วคราว/);
     }
     results.checks.push(`${role}: all 10 dashboard routes enforce access`);
@@ -112,12 +115,12 @@ export async function checkLiveDashboard({ context, page, mock, results, mode })
   assert.equal(await page.getByRole('button', { name: 'รับชำระเงิน', exact: true }).count(), 0);
   results.checks.push('kitchen_staff: start/ready succeeds, double click = one RPC, no cancel/payment controls');
 
-  mock.state.role = 'admin'; mock.state.status = 'confirmed';
+  mock.state.role = 'staff'; mock.state.status = 'confirmed';
   await goto('/dashboard/orders');
   await until(() => channels.size > 0, 'Realtime joined');
   mock.state.requests.length = 0;
   mock.state.status = 'preparing'; emit(); emit(); emit();
-  await page.getByRole('button', { name: 'อาหารพร้อมเสิร์ฟ', exact: true }).waitFor();
+  await page.getByText('กำลังทำ', { exact: true }).first().waitFor();
   await page.waitForTimeout(500);
   assert.equal(mock.state.requests.filter(r => r.path === '/rest/v1/orders').length, 1, 'burst coalesces into one order read');
   assert.equal(mock.state.requests.filter(r => r.path === '/auth/v1/user').length, 0);
@@ -139,7 +142,7 @@ export async function checkLiveDashboard({ context, page, mock, results, mode })
   // A subscribed hosted socket can miss an event: keep the socket open and
   // change the fixture without emit(), so only the lightweight backstop helps.
   mock.state.status = 'confirmed'; mock.state.updatedAt = new Date().toISOString();
-  await page.getByRole('button', { name: 'เริ่มทำอาหาร', exact: true }).waitFor({ timeout: 15000 });
+  await page.getByRole('button', { name: 'ยกเลิกออเดอร์', exact: true }).waitFor({ timeout: 15000 });
   results.checks.push('subscribed socket missing an event: lightweight polling recovers the order');
 
   mock.state.profileError = true; emit();
@@ -153,12 +156,13 @@ export async function checkLiveDashboard({ context, page, mock, results, mode })
     assert.ok(await page.getByRole('button', { name: 'กำลังดำเนินการ…', exact: true }).isDisabled());
   } finally { mock.state.delay = normalDelay; }
   await page.getByRole('alert').filter({ hasText: 'โหลดข้อมูลล่าสุดไม่สำเร็จชั่วคราว' }).waitFor({ state: 'hidden' });
-  mock.state.role = 'staff'; emit();
-  await until(async () => !(await page.getByRole('link', { name: 'จัดการผู้ใช้งาน', exact: true }).count()), 'role controls refreshed');
+  mock.state.role = 'admin'; emit();
+  await page.getByRole('heading', { name: /403/ }).waitFor();
+  mock.state.role = 'staff'; await goto('/dashboard/orders');
   mock.state.active = false; emit();
-  await page.waitForURL('**/access-denied');
-  mock.state.active = true; mock.state.role = 'admin';
-  results.checks.push('live profile failure recovers; role change and inactive account enforced');
+  await page.getByRole('heading', { name: /403/ }).waitFor();
+  mock.state.active = true; mock.state.role = 'staff';
+  results.checks.push('live profile failure recovers; role change and inactive account enforced with 403');
 
   mock.state.status = 'ready';
   await goto('/dashboard/ready');
@@ -170,6 +174,7 @@ export async function checkLiveDashboard({ context, page, mock, results, mode })
   await page.locator('article').waitFor({ state: 'hidden', timeout: 20000 });
   results.checks.push('socket disconnect: polling recovers missed order event');
 
+  mock.state.role = 'admin';
   await goto('/dashboard/tables');
   const tableButton = page.locator('article form button[type=submit]').first();
   mock.state.failWrite = true;
@@ -211,6 +216,7 @@ export async function checkLiveDashboard({ context, page, mock, results, mode })
 
   if (mode === 'dev') {
     mock.state.status = 'confirmed';
+    mock.state.role = 'kitchen_staff';
     await goto('/dashboard/kitchen');
     const path = 'src/app/dashboard/kitchen/page.tsx';
     const original = readFileSync(path, 'utf8');

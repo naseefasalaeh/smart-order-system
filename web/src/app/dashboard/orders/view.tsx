@@ -1,14 +1,19 @@
 "use client";
+import { OrderWorkloadProvider } from "@/components/order-workload-context";
+import PlateProgress from "@/components/plate-progress";
+import ServePlateButton from "@/components/serve-plate-button";
+import { pendingPlates, orderDisplayStatus } from "@/lib/plate-progress";
 import DashboardSidebar from "@/components/dashboard-sidebar";
 import OrderRealtimeRefresh from "@/components/order-realtime-refresh";
 import { OrderViewRefresh, OrderViewRetry, useLiveOrderView } from "@/components/live-order-view";
 import type { ShopRole } from "@/lib/dashboard-auth";
 import UpdateOrderStatusButton from "@/components/update-order-status-button";
-import Link from "next/link";
+import OrderStatusTabs from "@/components/order-status-tabs";
 import { useCallback } from "react";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { loadOrders } from "@/lib/order-views";
 const statusLabels: Record<string, string> = {
+  partially_served: "เสิร์ฟแล้วบางส่วน",
   confirmed: "รอเริ่มทำ",
   preparing: "กำลังทำ",
   ready: "พร้อมเสิร์ฟ",
@@ -26,13 +31,14 @@ const statusColors: Record<string, string> = {
   cancelled: "bg-red-100 text-red-700",
 };
 
-const allowed: ShopRole[] = ["admin", "staff"];
+const allowed: ShopRole[] = ["staff"];
 export default function OrdersView({ initial, userId, fullName, role, status, date }: { initial: Awaited<ReturnType<typeof loadOrders>>; userId: string; fullName: string; role: ShopRole; status?: string; date?: string; }) {
   const load = useCallback((db: SupabaseClient) => loadOrders(db, status, date), [status, date]);
   const { data, refresh, refreshAfterMutation, error: liveError } = useLiveOrderView(initial, userId, role, allowed, load);
-  const { orders, activeStatus, isHistory, visibleFilters, selectedDay, dayLabel, daySales, error } = data;
-  const canAdvanceStatus = role === "admin";
+  const { orders, activeStatus, isHistory, selectedDay, dayLabel, daySales, error } = data;
+  const canAdvanceStatus = false;
   return (
+    <OrderWorkloadProvider role={role}>
     <OrderViewRefresh.Provider value={refreshAfterMutation}>
     <main className="min-h-screen bg-orange-50 lg:flex">
       <OrderRealtimeRefresh onRefresh={refresh}
@@ -40,7 +46,7 @@ export default function OrdersView({ initial, userId, fullName, role, status, da
         fallbackIntervalMs={5_000} pollWhenSubscribed
       />
 
-      <DashboardSidebar role={role} fullName={fullName} activePath={activeStatus === "served" ? "/dashboard/orders?status=served" : "/dashboard/orders"} />
+      <DashboardSidebar role={role} fullName={fullName} activePath="/dashboard/orders" />
 
       <section className="flex-1 p-6 sm:p-8">
         <div className="mx-auto max-w-7xl">
@@ -61,53 +67,7 @@ export default function OrdersView({ initial, userId, fullName, role, status, da
             </p>
           </header>
 
-          <div className="mt-8 flex flex-wrap gap-3 border-b border-orange-200 pb-4">
-            <Link
-              href="/dashboard/orders"
-              className={`rounded-xl px-4 py-2 font-semibold transition ${
-                !isHistory
-                  ? "bg-zinc-900 text-white"
-                  : "bg-white text-zinc-600 shadow-sm hover:bg-orange-100"
-              }`}
-            >
-              ออเดอร์ปัจจุบัน
-            </Link>
-
-            <Link
-              href="/dashboard/orders?status=history"
-              className={`rounded-xl px-4 py-2 font-semibold transition ${
-                isHistory
-                  ? "bg-zinc-900 text-white"
-                  : "bg-white text-zinc-600 shadow-sm hover:bg-orange-100"
-              }`}
-            >
-              ประวัติออเดอร์
-            </Link>
-          </div>
-
-          <div className="mt-4 flex flex-wrap gap-3">
-            {visibleFilters.map((item) => {
-              const isActive = activeStatus === item.value;
-
-              return (
-                <Link
-                  key={item.label}
-                  href={
-                    item.value
-                       ? `/dashboard/orders?status=${item.value}${isHistory ? `&date=${selectedDay}` : ""}`
-                      : "/dashboard/orders"
-                  }
-                  className={`rounded-xl px-4 py-2 font-medium transition ${
-                    isActive
-                      ? "bg-orange-500 text-white"
-                      : "bg-white text-zinc-600 shadow-sm hover:bg-orange-100"
-                  }`}
-                >
-                  {item.label}
-                </Link>
-              );
-            })}
-          </div>
+          <OrderStatusTabs activeStatus={activeStatus} isHistory={isHistory} selectedDay={selectedDay} />
 
           {isHistory && (
             <div className="mt-5 rounded-2xl bg-white p-5 shadow-sm">
@@ -174,7 +134,7 @@ export default function OrdersView({ initial, userId, fullName, role, status, da
                           "bg-zinc-100 text-zinc-700"
                         }`}
                       >
-                        {statusLabels[order.status] ?? order.status}
+                        {statusLabels[orderDisplayStatus(order)] ?? order.status}
                       </span>
                     </div>
 
@@ -206,6 +166,8 @@ export default function OrdersView({ initial, userId, fullName, role, status, da
                                     </p>
                                   ))}
 
+                                  {!isHistory && <PlateProgress item={item} status={order.status} />}
+                                  {!isHistory && role === "staff" && <div className="mt-3 flex flex-wrap gap-2">{pendingPlates(item).map(plate => <ServePlateButton key={plate} itemId={item.id} plate={plate} takeaway={order.dining_type === "takeaway"} />)}</div>}
                                   {item.note && (
                                     <p className="mt-1 text-sm text-orange-600">
                                       หมายเหตุ: {item.note}
@@ -251,7 +213,7 @@ export default function OrdersView({ initial, userId, fullName, role, status, da
                         currentStatus={order.status}
                         totalAmount={Number(order.total_amount ?? 0)}
                         canAdvanceStatus={canAdvanceStatus}
-                        canServeAndPay={role === "admin" || role === "staff"}
+                        canServeAndPay={role === "staff" && order.status === "served"}
                         diningType={order.dining_type}
                       />}
                     </div>
@@ -264,5 +226,6 @@ export default function OrdersView({ initial, userId, fullName, role, status, da
       </section>
     </main>
     </OrderViewRefresh.Provider>
+    </OrderWorkloadProvider>
   );
 }

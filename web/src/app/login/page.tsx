@@ -1,4 +1,5 @@
 "use client";
+import { dashboardHomeForRole } from "@/lib/dashboard-navigation";
 
 import { FormEvent, useRef, useState } from "react";
 import Link from "next/link";
@@ -47,7 +48,7 @@ export default function LoginPage() {
       return;
     }
     navigating = true;
-    router.replace(profile.role === "kitchen_staff" ? "/dashboard/kitchen" : "/dashboard");
+    router.replace(dashboardHomeForRole(profile.role));
     } catch {
       setErrorMessage("เชื่อมต่อระบบไม่สำเร็จ กรุณาลองใหม่");
     } finally {

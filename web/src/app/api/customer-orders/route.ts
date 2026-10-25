@@ -48,6 +48,8 @@ export async function POST(request: Request) {
         order_items (
           id,
           quantity,
+          completed_plates,
+          served_plates,
           unit_price,
           subtotal,
           note,

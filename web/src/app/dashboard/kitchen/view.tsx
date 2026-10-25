@@ -1,4 +1,7 @@
 "use client";
+import PlateProgress from "@/components/plate-progress";
+import { orderDisplayStatus } from "@/lib/plate-progress";
+import KitchenPlates from "@/components/kitchen-plates";
 import DashboardSidebar from "@/components/dashboard-sidebar";
 import OrderRealtimeRefresh from "@/components/order-realtime-refresh";
 import { OrderViewRefresh, OrderViewRetry, useLiveOrderView } from "@/components/live-order-view";
@@ -17,15 +20,17 @@ const statusColors: Record<string, string> = {
   ready: "bg-green-100 text-green-700",
 };
 
-const allowed: ShopRole[] = ["admin", "kitchen_staff"];
+const allowed: ShopRole[] = ["kitchen_staff"];
 export default function OrdersView({ initial, userId, fullName, role }: { initial: Awaited<ReturnType<typeof loadKitchenOrders>>; userId: string; fullName: string; role: ShopRole;  }) {
   const load = loadKitchenOrders;
   const { data, refresh, refreshAfterMutation, error: liveError } = useLiveOrderView(initial, userId, role, allowed, load);
   const { orders, error } = data;
+  const first = orders?.find(order => ["confirmed", "preparing"].includes(order.status));
+  const preparing = orders?.some(order => order.status === "preparing");
   return (
     <OrderViewRefresh.Provider value={refreshAfterMutation}>
     <main className="min-h-screen bg-orange-50 lg:flex">
-      <OrderRealtimeRefresh onRefresh={refresh} channelName="staff-kitchen" />
+      <OrderRealtimeRefresh onRefresh={refresh} channelName="staff-kitchen" fallbackIntervalMs={5_000} pollWhenSubscribed />
 
       <DashboardSidebar role={role} fullName={fullName} activePath="/dashboard/kitchen" />
 
@@ -98,7 +103,7 @@ export default function OrdersView({ initial, userId, fullName, role }: { initia
                           "bg-zinc-100 text-zinc-700"
                         }`}
                       >
-                        {statusLabels[order.status] ?? order.status}
+                        {orderDisplayStatus(order) === "partially_served" ? "เสิร์ฟแล้วบางส่วน" : statusLabels[order.status] ?? order.status}
                       </span>
                     </div>
 
@@ -121,6 +126,9 @@ export default function OrdersView({ initial, userId, fullName, role }: { initia
                               </p>
                             ))}
 
+                            <PlateProgress item={item} status={order.status} />
+                            {order.status === "preparing" && <KitchenPlates itemId={item.id} quantity={item.quantity} completed={item.completed_plates ?? []} served={item.served_plates ?? []} />}
+
                             {item.note && (
                               <p className="mt-1 text-sm text-orange-600">
                                 หมายเหตุ: {item.note}
@@ -142,7 +150,12 @@ export default function OrdersView({ initial, userId, fullName, role }: { initia
                         orderId={order.id}
                         currentStatus={order.status}
                         totalAmount={Number(order.total_amount ?? 0)}
-                        canCancelOrder={role === "admin"}
+                        canCancelOrder={false}
+                        canAdvanceStatus={order.status === "confirmed"}
+                        disabledReason={order.status === "confirmed" && (order.id !== first?.id || preparing)
+                          ? "รอคิวก่อนหน้า"
+                          : order.status === "preparing" && (!order.order_items?.length || order.order_items.some(item => (item.completed_plates?.length ?? 0) !== item.quantity))
+                            ? "กรุณาติ๊กทำเสร็จให้ครบทุกจาน" : undefined}
                       />
                     ) : (
                       <div className="mt-5 rounded-xl bg-green-50 p-4 text-sm font-medium text-green-700">

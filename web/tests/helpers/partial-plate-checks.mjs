@@ -1,0 +1,93 @@
+import assert from 'node:assert/strict';
+
+export async function checkPartialPlates({ page, context, mock, emit, dir }) {
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  const item = (id,name,quantity) => ({ id, menu_name_snapshot:name, quantity, unit_price:50, subtotal:quantity*50,
+    completed_plates:[],served_plates:[],order_item_options:[] });
+  const first = { id:'00000000-0000-4000-8000-000000000501',order_number:501,status:'confirmed',total_amount:150,
+    dining_type:'dine_in',created_at:'2026-10-25T01:00:00Z',updated_at:'2026-10-25T01:00:00Z',
+    restaurant_tables:{table_number:'7'},order_items:[item(501,'ราดหน้า',1),item(502,'ข้าวผัด',2)] };
+  const next = { ...first,id:'00000000-0000-4000-8000-000000000502',order_number:502,
+    created_at:'2026-10-25T01:01:00Z',order_items:[item(503,'ผัดไทย',1)] };
+  mock.state.catalog.orders = [first,next]; mock.state.catalog.payments = [];
+  mock.state.role = 'kitchen_staff';
+  await page.goto('http://localhost:4400/dashboard/kitchen');
+  const kitchenFirst = () => page.locator('article').filter({ hasText:'ออเดอร์ #501' });
+  const kitchenNext = () => page.locator('article').filter({ hasText:'ออเดอร์ #502' });
+  await kitchenFirst().getByRole('button',{name:'เริ่มทำอาหาร',exact:true}).waitFor();
+  assert.equal(await kitchenNext().getByRole('button',{name:'รอคิวก่อนหน้า'}).isDisabled(),true);
+  await kitchenFirst().getByRole('button',{name:'เริ่มทำอาหาร',exact:true}).click();
+  await kitchenFirst().getByRole('checkbox').first().click();
+  await kitchenFirst().getByRole('checkbox').first().waitFor({state:'visible'});
+  await page.waitForFunction(() => [...document.querySelectorAll('legend')].some(el => el.textContent.includes('เสร็จแล้ว 1/1 จาน')));
+  assert.equal(first.status,'preparing');
+  mock.state.role = 'staff';
+  await page.goto('http://localhost:4400/dashboard/ready');
+  await page.getByRole('button',{name:'ยืนยันเสิร์ฟ จานที่ 1',exact:true}).waitFor();
+  const readyNav = page.getByRole('navigation',{name:'เมนูแดชบอร์ด'}).getByRole('link',{name:'พร้อมเสิร์ฟ',exact:true});
+  await readyNav.getByText('1 จาน',{exact:true}).waitFor();
+  assert.match(await page.locator('article').innerText(),/ราดหน้า/);
+  assert.match(await page.locator('article').innerText(),/กำลังทำ 2 จาน/);
+  await page.reload();
+  await page.getByRole('button',{name:'ยืนยันเสิร์ฟ จานที่ 1',exact:true}).waitFor();
+  const secondStaff = await context.newPage();
+  await secondStaff.goto('http://localhost:4400/dashboard/ready');
+  await secondStaff.getByRole('button',{name:'ยืนยันเสิร์ฟ จานที่ 1',exact:true}).waitFor();
+  const before = mock.state.rpcCalls.length;
+  await Promise.all([page,secondStaff].map(p => p.getByRole('button',{name:'ยืนยันเสิร์ฟ จานที่ 1',exact:true})
+    .evaluate(button => { button.click(); button.click(); })));
+  await page.locator('article').waitFor({state:'hidden'});
+  await secondStaff.locator('article').waitFor({state:'hidden'});
+  assert.equal(mock.state.rpcCalls.slice(before).filter(call => call.path.endsWith('/serve_order_plate')).length,2,'one request per terminal; both target same plate');
+  assert.deepEqual(first.order_items[0].served_plates,[1]);
+  assert.equal(first.status,'preparing');
+  await secondStaff.close();
+  await page.goto('http://localhost:4400/dashboard/orders?status=partially_served');
+  await page.locator('article').getByText('เสิร์ฟแล้วบางส่วน',{exact:true}).waitFor();
+  assert.equal(await page.getByRole('button',{name:'รับชำระเงิน',exact:true}).count(),0);
+  await page.goto('http://localhost:4400/dashboard/payments');
+  await page.getByText('ไม่มีรายการรอชำระเงิน',{exact:true}).waitFor();
+  mock.state.role = 'kitchen_staff';
+  await page.goto('http://localhost:4400/dashboard/kitchen');
+  await kitchenFirst().getByRole('checkbox').first().waitFor();
+  assert.equal(await kitchenFirst().getByRole('checkbox').first().isDisabled(),true,'served dish cannot be unchecked');
+  assert.equal(await kitchenNext().getByRole('button',{name:'รอคิวก่อนหน้า'}).isDisabled(),true,'partial service does not release FCFS');
+  await kitchenFirst().getByRole('checkbox').nth(1).click();
+  await page.waitForFunction(() => [...document.querySelectorAll('legend')].some(el => el.textContent.includes('เสร็จแล้ว 1/2 จาน')));
+  await kitchenFirst().getByRole('checkbox').nth(2).click();
+  await kitchenNext().getByRole('button',{name:'เริ่มทำอาหาร',exact:true}).waitFor();
+  await kitchenNext().getByRole('button',{name:'เริ่มทำอาหาร',exact:true}).click();
+  await kitchenNext().getByRole('checkbox').first().waitFor();
+  assert.equal(first.status,'ready'); assert.equal(next.status,'preparing');
+  mock.state.role = 'staff';
+  await page.goto('http://localhost:4400/dashboard/ready');
+  const toast = page.getByRole('status').filter({hasText:/โต๊ะ 7.*ข้าวผัด 2 จาน/});
+  await toast.waitFor();
+  await readyNav.getByText('2 จาน',{exact:true}).waitFor();
+  await page.setViewportSize({width:375,height:900});
+  assert.ok(await page.evaluate(() => document.documentElement.scrollWidth<=innerWidth));
+  await page.screenshot({path:`${dir}/partial-plates-mobile.png`,fullPage:true});
+  await page.reload();
+  await page.getByRole('button',{name:'ยืนยันเสิร์ฟ จานที่ 1',exact:true}).waitFor();
+  assert.equal(await toast.count(),0,'refresh does not repeat dish notification');
+  mock.state.failWrite = true;
+  await page.getByRole('button',{name:'ยืนยันเสิร์ฟ จานที่ 1',exact:true}).click();
+  await page.getByRole('alert').filter({hasText:'ยืนยันไม่สำเร็จ'}).waitFor();
+  assert.deepEqual(first.order_items[1].served_plates,[]);
+  mock.state.failWrite = false;
+  await page.getByRole('button',{name:'ยืนยันเสิร์ฟ จานที่ 1',exact:true}).click();
+  await page.getByRole('button',{name:'ยืนยันเสิร์ฟ จานที่ 1',exact:true}).waitFor({state:'hidden'});
+  await readyNav.getByText('1 จาน',{exact:true}).waitFor();
+  await page.getByRole('button',{name:'ยืนยันเสิร์ฟ จานที่ 2',exact:true}).click();
+  await page.locator('article').waitFor({state:'hidden'});
+  assert.equal(first.status,'served');
+  await page.goto('http://localhost:4400/dashboard/payments');
+  await page.getByRole('button',{name:'รับชำระเงิน',exact:true}).click();
+  await page.getByRole('button',{name:'เงินสด',exact:true}).click();
+  await page.getByText('ไม่มีรายการรอชำระเงิน',{exact:true}).waitFor();
+  assert.equal(mock.state.catalog.payments[0].amount,150);
+  assert.equal(next.status,'preparing','paying previous order does not alter next kitchen order');
+  delete mock.state.catalog.orders; delete mock.state.catalog.payments;
+  emit();
+  console.log('PASS: partial dishes, multiple quantities, reload, two staff terminals, failure recovery, FCFS, dish notifications, badge units, mobile and payment');
+}

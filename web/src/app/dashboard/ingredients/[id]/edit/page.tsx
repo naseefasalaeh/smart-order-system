@@ -1,3 +1,5 @@
+import IngredientResetFields from "@/components/ingredient-reset-fields";
+import { readIngredientReset } from "@/lib/ingredient-reset";
 import ActionForm from "@/components/action-form";
 import SubmitButton from "@/components/submit-button";
 import Link from "next/link";
@@ -30,7 +32,7 @@ export default async function EditIngredientPage({
   const [ingredientResult, categoriesResult] = await Promise.all([
     supabase
       .from("ingredients")
-      .select("id, name, unit, stock_quantity, minimum_stock, category_id")
+      .select("id, name, unit, stock_quantity, minimum_stock, category_id, updated_at, reset_every_days, reset_start_date, reset_time")
       .eq("id", id)
       .maybeSingle(),
     supabase
@@ -63,8 +65,8 @@ export default async function EditIngredientPage({
     if (
       !name ||
       !unit ||
-      Number.isNaN(stockQuantity) ||
-      Number.isNaN(minimumStock) ||
+      !Number.isFinite(stockQuantity) ||
+      !Number.isFinite(minimumStock) ||
       (categoryId !== null &&
         (!Number.isInteger(categoryId) || categoryId <= 0)) ||
       stockQuantity < 0 ||
@@ -101,18 +103,18 @@ export default async function EditIngredientPage({
       }
     }
 
-    const { error: updateError } = await supabase
-      .from("ingredients")
-      .update({
-        name,
-        unit,
-        stock_quantity: stockQuantity,
-        minimum_stock: minimumStock,
-        category_id: categoryId,
-        updated_at: new Date().toISOString(),
-      })
-      .eq("id", id);
+    let reset;
+    try { reset = readIngredientReset(formData); }
+    catch (cause) { editIngredientErrorRedirect(id, cause instanceof Error ? cause.message : "Invalid reset schedule"); }
+    const { error: updateError } = await supabase.rpc("save_ingredient", {
+      p_id: Number(id),
+      p_expected_updated_at: String(formData.get("expected_updated_at") ?? "") || null,
+      p_values: { name, unit, minimum_stock: minimumStock, category_id: categoryId, ...reset,
+        ...(stockQuantity !== Number(formData.get("original_stock")) ? { stock_quantity: stockQuantity } : {}),
+      },
+    });
 
+    if (updateError?.message === "INGREDIENT_CHANGED") editIngredientErrorRedirect(id, "ข้อมูลสต็อกเปลี่ยนแล้ว กรุณาตรวจยอดล่าสุดและบันทึกอีกครั้ง");
     if (updateError) {
       if (updateError.code !== "23505") {
         console.error("Failed to update ingredient", updateError);
@@ -162,6 +164,8 @@ export default async function EditIngredientPage({
           )}
 
           <ActionForm action={updateIngredient} className="mt-8 space-y-5">
+            <input type="hidden" name="expected_updated_at" value={ingredient.updated_at ?? ""} />
+            <input type="hidden" name="original_stock" value={ingredient.stock_quantity} />
             {categoriesResult.error && (
               <div className="rounded-xl bg-red-50 p-4 text-red-700">
                 โหลดหมวดหมู่ไม่สำเร็จ กรุณากลับไปลองใหม่
@@ -285,6 +289,8 @@ export default async function EditIngredientPage({
                 />
               </div>
             </div>
+
+            <IngredientResetFields days={ingredient.reset_every_days} start={ingredient.reset_start_date} time={ingredient.reset_time} />
 
             <div className="flex flex-col-reverse gap-3 pt-3 sm:flex-row sm:justify-end">
               <Link

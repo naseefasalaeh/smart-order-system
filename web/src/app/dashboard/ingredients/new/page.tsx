@@ -1,3 +1,5 @@
+import IngredientResetFields from "@/components/ingredient-reset-fields";
+import { readIngredientReset } from "@/lib/ingredient-reset";
 import ActionForm from "@/components/action-form";
 import SubmitButton from "@/components/submit-button";
 import Link from "next/link";
@@ -44,8 +46,8 @@ export default async function NewIngredientPage({
     if (
       !name ||
       !unit ||
-      Number.isNaN(stockQuantity) ||
-      Number.isNaN(minimumStock) ||
+      !Number.isFinite(stockQuantity) ||
+      !Number.isFinite(minimumStock) ||
       !Number.isInteger(categoryId) ||
       categoryId <= 0 ||
       stockQuantity < 0 ||
@@ -70,12 +72,11 @@ export default async function NewIngredientPage({
       );
     }
 
-    const { error } = await supabase.from("ingredients").insert({
-      name,
-      unit,
-      stock_quantity: stockQuantity,
-      minimum_stock: minimumStock,
-      category_id: categoryId,
+    let reset;
+    try { reset = readIngredientReset(formData); }
+    catch (cause) { newIngredientErrorRedirect(cause instanceof Error ? cause.message : "Invalid reset schedule"); }
+    const { error } = await supabase.rpc("save_ingredient", {
+      p_id: null, p_values: { name, unit, stock_quantity: stockQuantity, minimum_stock: minimumStock, category_id: categoryId, ...reset },
     });
 
     if (error) {
@@ -244,6 +245,8 @@ export default async function NewIngredientPage({
                 />
               </div>
             </div>
+
+            <IngredientResetFields />
 
             <div className="flex flex-col-reverse gap-3 pt-3 sm:flex-row sm:justify-end">
               <Link

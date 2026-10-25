@@ -44,7 +44,7 @@ export async function POST(request: Request, context: RouteContext) {
       if (!user) return NextResponse.json({ error: "กรุณาเข้าสู่ระบบ" }, { status: 401 });
       const { data: profile, error: profileError } = await supabase.from("profiles").select("role,is_active").eq("id", user.id).maybeSingle();
       if (profileError) throw profileError;
-      if (!profile?.is_active || !["admin", "staff"].includes(profile.role)) {
+      if (!profile?.is_active || profile.role !== "staff") {
         return NextResponse.json({ error: "ไม่มีสิทธิ์ยกเลิกออเดอร์" }, { status: 403 });
       }
     }

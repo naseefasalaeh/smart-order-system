@@ -1,4 +1,4 @@
-import { redirect } from "next/navigation";
+import { forbidden, redirect } from "next/navigation";
 import { cache } from "react";
 import { createClient } from "@/lib/supabase/server";
 import { getVerifiedProfile } from "@/lib/supabase/verified-profile";
@@ -29,7 +29,7 @@ const dashboardIdentity = cache(async () => {
   }
   if (!profile?.is_active || !role || !["admin", "staff", "kitchen_staff"].includes(role)) {
     console.warn("[dashboard-auth] account_denied", { reason: !profile ? "missing_profile" : !profile.is_active ? "inactive" : "unknown_role" });
-    redirect("/access-denied");
+    forbidden();
   }
   logDuration("dashboard.auth.total", totalStarted);
   return { db, user, role, fullName: (profile.full_name as string | null)?.trim() || "ผู้ใช้งาน" };
@@ -39,7 +39,7 @@ export async function requireDashboardContext(allowed: ShopRole[]) {
   const identity = await dashboardIdentity();
   if (!allowed.includes(identity.role)) {
     console.warn("[dashboard-auth] role_denied", { role: identity.role, allowed });
-    redirect("/access-denied");
+    forbidden();
   }
   return identity;
 }

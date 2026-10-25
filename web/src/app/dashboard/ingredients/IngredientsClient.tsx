@@ -17,6 +17,9 @@ type Ingredient = {
   stock_quantity: number;
   minimum_stock: number;
   updated_at: string | null;
+  reset_every_days: number | null;
+  reset_time: string | null;
+  reset_next_at: string | null;
   ingredient_categories: IngredientCategory | null;
 };
 
@@ -135,6 +138,10 @@ export default function IngredientsClient({
                   >
                     <td className="px-6 py-5 font-semibold text-zinc-900">
                       {ingredient.name}
+                      <p className="mt-1 text-xs font-normal text-zinc-500">
+                        {ingredient.reset_every_days == null ? "ไม่รีเซ็ต · ยกยอดต่อ" : `${ingredient.reset_every_days === 1 ? "รีเซ็ตทุกวัน" : `รีเซ็ตทุก ${ingredient.reset_every_days} วัน`} เวลา ${ingredient.reset_time?.slice(0,5)} น. (ไทย)`}
+                      </p>
+                      {ingredient.reset_next_at && <p className="mt-1 text-xs font-normal text-orange-700">รอบถัดไป {new Date(ingredient.reset_next_at).toLocaleString("th-TH", { timeZone: "Asia/Bangkok", dateStyle: "short", timeStyle: "short" })}</p>}
                     </td>
                     <td className="px-6 py-5 text-zinc-700">
                       {ingredient.ingredient_categories?.name ?? "ยังไม่มีหมวด"}

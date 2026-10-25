@@ -93,24 +93,51 @@ export default function MenuClient({
   const [showCart, setShowCart] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const submitting = useRef(false);
-  const pendingRequest = useRef<{ payload: string; id: string } | null>(null);
+  const pendingRequest = useRef<{ payload: string; id: string; sessionToken: string } | null>(null);
   const [successMessage, setSuccessMessage] = useState("");
   const [errorMessage, setErrorMessage] = useState("");
-  function getOrCreateSessionToken() {
+  async function getOrCreateSessionToken() {
+    // A different tab may have changed localStorage while an order's response
+    // was lost. Retry against the original round and original request ID.
+    if (pendingRequest.current) return pendingRequest.current.sessionToken;
     const storageKey = `smart-order-session-id-${tableId}`;
-    const existingToken = window.localStorage.getItem(storageKey) ?? window.localStorage.getItem(`smart-order-session-${legacyReference}`);
-    const uuidPattern =
-      /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-    const token =
-      existingToken && uuidPattern.test(existingToken)
-        ? existingToken
-        : window.crypto.randomUUID();
+    const resolveToken = async () => {
+      const existingToken = window.localStorage.getItem(storageKey) ?? window.localStorage.getItem(`smart-order-session-${legacyReference}`);
+      const uuidPattern =
+        /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+      let token =
+        existingToken && uuidPattern.test(existingToken)
+          ? existingToken
+          : window.crypto.randomUUID();
 
-    if (window.localStorage.getItem(storageKey) !== token) {
-      window.localStorage.setItem(storageKey, token);
-    }
+      // Reuse active rounds. Only replace a saved token after the server confirms
+      // that its round is closed; a network failure must never start another round.
+      if (existingToken && uuidPattern.test(existingToken)) {
+        const response = await fetch("/api/customer-orders", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ tableId: Number(tableId), sessionToken: token }),
+          cache: "no-store",
+        });
+        if (!response.ok) throw new Error("ตรวจสอบรอบโต๊ะไม่สำเร็จ กรุณาลองใหม่");
+        const result = await response.json() as { session: { status: string } | null };
+        if (result.session?.status === "closed") {
+          token = window.crypto.randomUUID();
+          // Remove the migrated alias too, so it cannot resurrect the closed round.
+          window.localStorage.removeItem(`smart-order-session-${legacyReference}`);
+        }
+      }
 
-    return token;
+      if (window.localStorage.getItem(storageKey) !== token) {
+        window.localStorage.setItem(storageKey, token);
+      }
+
+      return token;
+    };
+    // Serialize round renewal across tabs on browsers with Web Locks.
+    return navigator.locks
+      ? navigator.locks.request(storageKey, resolveToken)
+      : resolveToken();
   }
 
   const cartQuantity = useMemo(
@@ -327,16 +354,16 @@ export default function MenuClient({
     setIsSubmitting(true);
     setErrorMessage("");
     setSuccessMessage("");
-    const sessionToken = getOrCreateSessionToken();
 
     try {
+      const sessionToken = await getOrCreateSessionToken();
       const payload = JSON.stringify({
         tableId, sessionToken, diningType, note: orderNote.trim() || undefined,
         items: cart.map((item) => ({ menuId: item.menuId, quantity: item.quantity,
           note: item.note ?? undefined, optionSelections: item.optionSelections })),
       });
       if (pendingRequest.current?.payload !== payload) {
-        pendingRequest.current = { payload, id: crypto.randomUUID() };
+        pendingRequest.current = { payload, id: crypto.randomUUID(), sessionToken };
       }
       const response = await fetch("/api/orders", {
         method: "POST",
@@ -369,6 +396,9 @@ export default function MenuClient({
       };
 
       if (!response.ok) {
+        // A definitive rejection can be retried with a fresh round. Keep the
+        // request ID on server/network failures: the order may already exist.
+        if (response.status >= 400 && response.status < 500) pendingRequest.current = null;
         const message = [
           result.error,
           result.details,
@@ -427,7 +457,8 @@ export default function MenuClient({
       <div className="mt-6 flex flex-wrap gap-2" aria-label="หมวดอาหาร">
         {["", ...new Set(menus.map((menu) => menu.category_name))].map((name) => <button key={name} type="button" aria-pressed={category === name} onClick={() => setCategory(name)} className={`rounded-full border px-4 py-2 font-semibold ${category === name ? "border-orange-600 bg-orange-600 text-white" : "border-zinc-300 bg-white text-zinc-700"}`}>{name || "ทั้งหมด"}</button>)}
       </div>
-      <div className="mt-8 grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
+      <div className="mt-8 grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_20rem]">
+      <div className="grid gap-6 sm:grid-cols-2 xl:grid-cols-3">
         {menus.filter((menu) => !category || menu.category_name === category).map((menu) => (
           <article
             key={menu.id}
@@ -465,6 +496,10 @@ export default function MenuClient({
                   "ไม่มีรายละเอียดเพิ่มเติม"}
               </p>
 
+              {cart.some((item) => item.menuId === menu.id) && <p className="mt-2 rounded-lg bg-orange-50 px-3 py-2 text-sm font-semibold text-orange-700">
+                ในตะกร้า {cart.filter((item) => item.menuId === menu.id).reduce((sum, item) => sum + item.quantity, 0)} จาน
+              </p>}
+
               <div className="mt-5 flex items-center justify-between gap-3">
                 <p className="text-xl font-bold text-orange-500">
                   {formatPrice(menu.price)} บาท
@@ -486,12 +521,43 @@ export default function MenuClient({
         ))}
       </div>
 
+      <aside aria-label="รายการในตะกร้า" className="order-first rounded-2xl border border-orange-200 bg-white p-5 shadow-sm lg:sticky lg:top-5 lg:order-last">
+        <div className="flex items-center justify-between gap-3">
+          <h3 className="text-xl font-bold text-zinc-900">ตะกร้าของคุณ</h3>
+          <span className="rounded-full bg-orange-100 px-3 py-1 text-sm font-semibold text-orange-800">{cartQuantity} จาน</span>
+        </div>
+        {cart.length === 0 ? <p className="mt-4 text-sm text-zinc-500">เลือกอาหารแล้วรายการจะแสดงตรงนี้</p> : <>
+          <ul className="mt-4 max-h-[45vh] space-y-4 overflow-y-auto">
+            {cart.map((item) => <li key={item.cartId} className="border-b border-zinc-100 pb-4">
+              <div className="flex items-start justify-between gap-3">
+                <p className="font-semibold text-zinc-900">{item.menuName}</p>
+                <p className="shrink-0 font-semibold text-orange-600">{formatPrice(item.unitPrice * item.quantity)} บาท</p>
+              </div>
+              {item.selectedOptions.length > 0 && <p className="mt-1 text-sm text-zinc-500">{item.selectedOptions.map((option) => `${option.name} × ${option.quantity}`).join(" · ")}</p>}
+              <div className="mt-3 flex items-center justify-between gap-2">
+                <div className="flex items-center rounded-lg border border-zinc-200">
+                  <button type="button" aria-label={`ลดจำนวน ${item.menuName}`} onClick={() => decreaseCartQuantity(item.cartId)} className="h-11 w-11 hover:bg-zinc-100">−</button>
+                  <span className="min-w-6 text-center font-semibold">{item.quantity}</span>
+                  <button type="button" aria-label={`เพิ่มจำนวน ${item.menuName}`} onClick={() => increaseCartQuantity(item.cartId)} className="h-11 w-11 hover:bg-zinc-100">+</button>
+                </div>
+                <button type="button" onClick={() => editCartItem(item)} className="min-h-11 px-2 text-sm font-semibold text-orange-700">แก้ไข</button>
+                <button type="button" aria-label={`ลบ ${item.menuName}`} onClick={() => removeCartItem(item.cartId)} className="min-h-11 px-2 text-sm text-red-600">ลบ</button>
+              </div>
+            </li>)}
+          </ul>
+          <div className="mt-4 flex items-center justify-between font-bold"><span>ยอดรวม</span><span className="text-xl text-orange-600">{formatPrice(totalAmount)} บาท</span></div>
+          <button type="button" onClick={() => { setShowCart(true); setErrorMessage(""); }} className="mt-4 min-h-12 w-full rounded-xl bg-orange-500 px-4 py-3 font-bold text-white hover:bg-orange-600">ตรวจรายการและสั่งอาหาร</button>
+        </>}
+      </aside>
+      </div>
+
       {cart.length > 0 && (
-        <div className="fixed inset-x-0 bottom-0 z-30 border-t border-zinc-200 bg-white/95 px-5 py-4 shadow-[0_-5px_20px_rgba(0,0,0,0.08)] backdrop-blur">
+        <div className="fixed inset-x-0 bottom-0 z-30 border-t border-zinc-200 bg-white/95 px-5 py-4 shadow-[0_-5px_20px_rgba(0,0,0,0.08)] backdrop-blur lg:hidden">
           <div className="mx-auto flex max-w-5xl items-center justify-between gap-4">
             <div>
+              <p className="max-w-[55vw] truncate text-sm font-semibold text-zinc-800" aria-label="อาหารในตะกร้า">{cart.map((item) => `${item.menuName} × ${item.quantity}`).join(" · ")}</p>
               <p className="text-sm text-zinc-500">
-                {cartQuantity} รายการ
+                {cartQuantity} จาน · {cart.length} รายการ
               </p>
 
               <p className="text-xl font-bold text-zinc-900">
@@ -768,6 +834,7 @@ export default function MenuClient({
 
               <button
                 type="button"
+                aria-label="ปิดตะกร้าอาหาร"
                 onClick={() => setShowCart(false)}
                 className="flex h-10 w-10 items-center justify-center rounded-full bg-zinc-100 text-xl text-zinc-600"
               >

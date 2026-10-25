@@ -1,3 +1,4 @@
+import { orderDisplayStatus } from "@/lib/plate-progress";
 import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 
@@ -57,7 +58,7 @@ export async function POST(request: Request) {
 
     const { data: orders, error: ordersError } = await supabase
       .from("orders")
-      .select("id, order_number, status, created_at, session_id")
+      .select("id, order_number, status, created_at, session_id,order_items(quantity,served_plates)")
       .in("status", queueStatuses)
       .order("created_at", { ascending: true })
       .order("id", { ascending: true });
@@ -79,6 +80,7 @@ export async function POST(request: Request) {
             ? rawQueueNumber
             : `#${rawQueueNumber}`,
           status: String(order.status),
+          partiallyServed: orderDisplayStatus(order) === "partially_served",
           created_at: String(order.created_at),
           isMine: String(order.session_id) === String(session.id),
         },

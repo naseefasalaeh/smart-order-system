@@ -56,6 +56,15 @@ test('serve then pay: role enforcement, audit preservation, retries and both din
       await query('select serve_order($1)', [id]);
       assert.equal((await query('select served_by from orders where id=$1', [id]))[0].served_by, actor);
     }
+    await as();
+    const bills = await query("insert into orders(table_id,status,total_amount,stock_deducted,dining_type) values(1,'served',83.50,true,'dine_in'),(1,'served',84.50,true,'dine_in') returning id,total_amount");
+    await as(staff);
+    await query("select complete_order_payment($1,'cash')", [bills[0].id]);
+    assert.equal((await query('select status from orders where id=$1', [bills[1].id]))[0].status, 'served', 'same-table bill stays unpaid');
+    assert.equal(Number((await query('select amount from payments where order_id=$1', [bills[0].id]))[0].amount), 83.5);
+    await assert.rejects(query("select complete_order_payment($1,'qr_code')", [bills[0].id]), /ORDER_NOT_SERVED/);
+    await query("select complete_order_payment($1,'qr_code')", [bills[1].id]);
+    assert.equal(Number((await query('select amount from payments where order_id=$1', [bills[1].id]))[0].amount), 84.5);
     await as(); await query('update profiles set is_active=false where id=$1', [staff]);
     await as(staff);
     await assert.rejects(query('select serve_order($1)', [admin]), /STAFF_ROLE_REQUIRED/);

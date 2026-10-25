@@ -1,3 +1,4 @@
+import { orderDisplayStatus } from "@/lib/plate-progress";
 import Link from "next/link";
 import DashboardSidebar from "@/components/dashboard-sidebar";
 import { requireDashboardContext } from "@/lib/dashboard-auth";
@@ -23,7 +24,7 @@ const statusColors: Record<string, string> = {
 };
 
 export default async function DashboardPage() {
-  const { db: supabase, role, fullName } = await requireDashboardContext(["admin", "staff"]);
+  const { db: supabase, role, fullName } = await requireDashboardContext(["admin"]);
 
   // จุดเริ่มต้นและสิ้นสุดของวันนี้ในประเทศไทย แล้วแปลงเป็น UTC สำหรับค้นฐานข้อมูล
   const now = new Date();
@@ -76,6 +77,7 @@ export default async function DashboardPage() {
         status,
         total_amount,
         created_at,
+        order_items(quantity,completed_plates,served_plates),
         restaurant_tables (
           table_number
         )
@@ -200,10 +202,10 @@ export default async function DashboardPage() {
                 </p>
               </div>
               <Link
-                href="/dashboard/orders"
+                href="/dashboard/reports"
                 className="font-semibold text-orange-500 hover:text-orange-600"
               >
-                ดูออเดอร์ทั้งหมด
+                ดูรายงาน
               </Link>
             </div>
 
@@ -275,7 +277,7 @@ export default async function DashboardPage() {
                                 "bg-zinc-100 text-zinc-700"
                               }`}
                             >
-                              {statusLabels[order.status] ?? order.status}
+                              {orderDisplayStatus(order) === "partially_served" ? "เสิร์ฟแล้วบางส่วน" : statusLabels[order.status] ?? order.status}
                             </span>
                           </td>
                         </tr>

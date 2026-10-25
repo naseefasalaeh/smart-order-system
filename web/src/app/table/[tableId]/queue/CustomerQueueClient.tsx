@@ -10,6 +10,7 @@ type QueueOrder = {
   status: QueueStatus;
   created_at: string;
   isMine: boolean;
+  partiallyServed?: boolean;
 };
 
 const waitingStatuses = new Set<QueueStatus>([
@@ -327,7 +328,7 @@ export default function CustomerQueueClient({
                     <span
                       className={`shrink-0 rounded-full px-3 py-1 text-sm font-semibold ${statusStyles[order.status]}`}
                     >
-                      {statusLabels[order.status]}
+                      {order.partiallyServed ? "เสิร์ฟแล้วบางส่วน" : statusLabels[order.status]}
                     </span>
                   </article>
                 ))}

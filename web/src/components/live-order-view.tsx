@@ -46,7 +46,7 @@ export function useLiveOrderView<T extends { error: unknown }>(initial: T, userI
         if (currentGeneration !== generation.current) return;
         if (profile.error) throw new Error("ตรวจสอบสิทธิ์ไม่สำเร็จชั่วคราว กรุณาลองใหม่");
         if (!profile.data?.is_active || !allowed.includes(profile.data.role)) {
-          router.replace("/access-denied");
+          router.refresh();
           throw new Error("บัญชีนี้ไม่มีสิทธิ์เข้าหน้านี้");
         }
         if (profile.data.role !== role) {

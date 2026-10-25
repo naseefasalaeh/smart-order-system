@@ -10,10 +10,12 @@ type UpdateOrderStatusButtonProps = {
   currentStatus: string;
   totalAmount: number;
   canAdvanceStatus?: boolean;
+  disabledReason?: string;
   canCancelOrder?: boolean;
   canServeAndPay?: boolean;
   diningType?: string;
   onServed?: () => void;
+  onPaid?: () => void;
 };
 
 type OrderAction = {
@@ -43,10 +45,12 @@ export default function UpdateOrderStatusButton({
   currentStatus,
   totalAmount,
   canAdvanceStatus = true,
+  disabledReason,
   canCancelOrder = true,
   canServeAndPay = false,
   diningType,
   onServed,
+  onPaid,
 }: UpdateOrderStatusButtonProps) {
   const router = useRouter();
   const refreshView = useOrderViewRefresh();
@@ -81,7 +85,7 @@ export default function UpdateOrderStatusButton({
   }
 
   const updateStatus = async () => {
-    if (!action || !begin()) return;
+    if (!action || disabledReason || !begin()) return;
     try {
     const { error } = action.status === "served"
       ? await supabase.rpc("serve_order", { p_order_id: orderId })
@@ -90,7 +94,7 @@ export default function UpdateOrderStatusButton({
     });
 
     if (error) {
-      setErrorMessage(error.code === "P0001" ? "สถานะออเดอร์เปลี่ยนไปแล้ว กรุณาโหลดหน้าใหม่" : "เปลี่ยนสถานะไม่สำเร็จ กรุณาลองใหม่");
+      setErrorMessage(error.message === "WAIT_PREVIOUS_ORDER" ? "รอคิวก่อนหน้า" : error.message === "PLATES_INCOMPLETE" ? "กรุณาติ๊กทำเสร็จให้ครบทุกจาน" : error.code === "P0001" ? "สถานะออเดอร์เปลี่ยนไปแล้ว กรุณาโหลดหน้าใหม่" : "เปลี่ยนสถานะไม่สำเร็จ กรุณาลองใหม่");
       if (error.code === "P0001") await refresh();
       return;
     }
@@ -157,6 +161,7 @@ export default function UpdateOrderStatusButton({
     }
 
     setShowPaymentOptions(false);
+    onPaid?.();
     await refresh();
     } catch { setErrorMessage("เชื่อมต่อระบบไม่สำเร็จ กรุณาตรวจรายการชำระเงินก่อนลองใหม่"); }
     finally { finish(); }
@@ -237,10 +242,10 @@ export default function UpdateOrderStatusButton({
         {action && <button
           type="button"
           onClick={updateStatus}
-          disabled={isUpdating}
+          disabled={isUpdating || Boolean(disabledReason)}
           className={`w-full rounded-xl px-4 py-3 font-semibold text-white transition disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto ${action.color}`}
         >
-          {isUpdating ? action.loadingLabel : action.label}
+          {isUpdating ? action.loadingLabel : disabledReason || action.label}
         </button>}
 
         {canCancel && (

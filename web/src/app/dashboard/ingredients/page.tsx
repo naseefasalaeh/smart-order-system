@@ -20,6 +20,9 @@ export default async function IngredientsPage({ searchParams }: {
         stock_quantity,
         minimum_stock,
         updated_at,
+        reset_every_days,
+        reset_time,
+        reset_next_at,
         ingredient_categories (
           id,
           name,

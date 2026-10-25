@@ -1,5 +1,7 @@
 "use client";
 
+import PlateProgress from "@/components/plate-progress";
+import { orderDisplayStatus } from "@/lib/plate-progress";
 import Link from "next/link";
 import { useCustomerOrderEvents } from "@/components/customer-order-events";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -16,6 +18,8 @@ type OrderItem = {
   menu_price_snapshot: number;
   id: number;
   quantity: number;
+  completed_plates: number[];
+  served_plates: number[];
   unit_price: number;
   subtotal: number;
   note: string | null;
@@ -35,6 +39,7 @@ type Order = {
 };
 
 const statusLabels: Record<string, string> = {
+  partially_served: "เสิร์ฟแล้วบางส่วน",
   confirmed: "รับออเดอร์แล้ว",
   preparing: "กำลังทำ",
   ready: "พร้อมเสิร์ฟ",
@@ -240,7 +245,7 @@ export default function CustomerOrdersClient({ tableId, tableNumber, legacyRefer
       });
       const result = await response.json();
       if (!response.ok) { setCancelMessage(result.error ?? "ยกเลิกออเดอร์ไม่สำเร็จ"); return; }
-      setCancelMessage("ยกเลิกออเดอร์สำเร็จ คืนสต็อกแล้ว");
+      setCancelMessage("ยกเลิกออเดอร์สำเร็จ");
       await loadOrders(true);
     } catch {
       setCancelMessage("เชื่อมต่อระบบไม่สำเร็จ กรุณาลองใหม่");
@@ -291,7 +296,7 @@ export default function CustomerOrdersClient({ tableId, tableNumber, legacyRefer
                     </p>
                   </div>
                   <span className="rounded-full bg-orange-50 px-3 py-1 text-sm font-semibold text-orange-600">
-                    {statusLabels[order.status] ?? order.status}
+                    {statusLabels[orderDisplayStatus(order)] ?? order.status}
                   </span>
                 </div>
 
@@ -309,6 +314,7 @@ export default function CustomerOrdersClient({ tableId, tableNumber, legacyRefer
                           {option.option_name} × {option.quantity} ต่อจาน
                         </p>
                       ))}
+                      <PlateProgress item={item} status={order.status} />
                       {item.note && <p className="mt-1 text-sm text-zinc-500">{item.note}</p>}
                     </div>
                   ))}

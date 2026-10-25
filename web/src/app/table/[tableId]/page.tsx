@@ -94,12 +94,12 @@ export default async function TablePage({ params }: TablePageProps) {
   return (
     <main className="min-h-screen bg-zinc-100 pb-32">
       <header className="bg-zinc-900 text-white shadow-md">
-        <div className="mx-auto max-w-5xl px-5 py-7">
+        <div className="mx-auto max-w-7xl px-5 py-7">
           <p className="text-sm font-semibold tracking-[0.2em] text-orange-400">
             SMART ORDER
           </p>
 
-          <div className="mt-1 flex items-end justify-between gap-4">
+          <div className="mt-1 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
             <div>
               <h1 className="text-2xl font-bold">
                 เลือกเมนูอาหาร
@@ -110,7 +110,7 @@ export default async function TablePage({ params }: TablePageProps) {
               </p>
             </div>
 
-            <div className="flex shrink-0 flex-col items-end gap-2 sm:flex-row sm:items-center">
+            <div className="flex flex-wrap items-center justify-between gap-2 sm:justify-end">
               <div className="flex flex-wrap justify-end gap-2">
                 <Link
                   href={`/table/id-${table.id}/orders`}
@@ -141,7 +141,7 @@ export default async function TablePage({ params }: TablePageProps) {
         </div>
       </header>
 
-      <section className="mx-auto max-w-5xl px-5 py-8">
+      <section className="mx-auto max-w-7xl px-5 py-8">
         <div>
           <p className="font-semibold text-orange-500">
             รายการอาหาร
