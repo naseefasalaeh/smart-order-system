@@ -25,8 +25,8 @@ export default function OrdersView({ initial, userId, fullName, role }: { initia
   const load = loadKitchenOrders;
   const { data, refresh, refreshAfterMutation, error: liveError } = useLiveOrderView(initial, userId, role, allowed, load);
   const { orders, error } = data;
-  const first = orders?.find(order => ["confirmed", "preparing"].includes(order.status));
-  const preparing = orders?.some(order => order.status === "preparing");
+  const firstPendingOrder = orders?.find(order => ["confirmed", "preparing"].includes(order.status));
+  const hasPreparingOrder = orders?.some(order => order.status === "preparing");
   return (
     <OrderViewRefresh.Provider value={refreshAfterMutation}>
     <main className="min-h-screen bg-orange-50 lg:flex">
@@ -152,7 +152,7 @@ export default function OrdersView({ initial, userId, fullName, role }: { initia
                         totalAmount={Number(order.total_amount ?? 0)}
                         canCancelOrder={false}
                         canAdvanceStatus={order.status === "confirmed"}
-                        disabledReason={order.status === "confirmed" && (order.id !== first?.id || preparing)
+                        disabledReason={order.status === "confirmed" && (order.id !== firstPendingOrder?.id || hasPreparingOrder)
                           ? "รอคิวก่อนหน้า"
                           : order.status === "preparing" && (!order.order_items?.length || order.order_items.some(item => (item.completed_plates?.length ?? 0) !== item.quantity))
                             ? "กรุณาติ๊กทำเสร็จให้ครบทุกจาน" : undefined}

@@ -128,29 +128,44 @@ export default function OrderRealtimeRefresh({
           table: "orders",
         },
         refreshOrders,
-      )
-      .subscribe((status, error) => {
+      );
+
+    const subscribe = async () => {
+      try {
+        // Cookie-backed Auth may still be initializing when effects mount.
+        // Joining before it resolves can acknowledge an anonymous subscription
+        // which never sees RLS-protected orders, even after HTTP reads succeed.
+        await supabase.realtime.setAuth();
         if (!isActive) return;
+        channel.subscribe((status, error) => {
+          if (!isActive) return;
 
-        if (status === "SUBSCRIBED") {
-          if (!pollWhenSubscribed) stopFallbackPolling();
-          // Covers changes between SSR and initial subscription, as well as reconnects.
-          refreshOrders();
-          return;
-        }
-
-        if (
-          status === "CHANNEL_ERROR" ||
-          status === "TIMED_OUT" ||
-          status === "CLOSED"
-        ) {
-          startFallbackPolling();
-
-          if (error) {
-            console.error("Order Realtime subscription failed:", error);
+          if (status === "SUBSCRIBED") {
+            if (!pollWhenSubscribed) stopFallbackPolling();
+            // Covers changes between SSR and initial subscription, as well as reconnects.
+            refreshOrders();
+            return;
           }
-        }
-      });
+
+          if (
+            status === "CHANNEL_ERROR" ||
+            status === "TIMED_OUT" ||
+            status === "CLOSED"
+          ) {
+            startFallbackPolling();
+
+            if (error) {
+              console.error("Order Realtime subscription failed:", error);
+            }
+          }
+        });
+      } catch (error) {
+        if (!isActive) return;
+        startFallbackPolling();
+        console.error("Order Realtime authentication failed:", error);
+      }
+    };
+    void subscribe();
 
     return () => {
       isActive = false;

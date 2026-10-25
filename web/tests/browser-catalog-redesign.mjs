@@ -18,7 +18,7 @@ const data=async(q)=>{const r=await q;if(r.error)throw new Error(`${r.error.code
 const check=(name)=>{s.checks.push(name);save();console.log(`PASS ${name}`);};
 async function fingerprint(){
   const result={};
-  for(const table of ['menus','ingredients','menu_ingredients','menu_options','menu_option_groups','menu_option_ingredients','addons','addon_ingredients','orders','order_items','order_item_options','order_ingredient_usages','restaurant_tables','dining_sessions','profiles','categories','ingredient_categories','payments','reviews']){
+  for(const table of ['menus','ingredients','menu_ingredients','menu_options','menu_option_groups','menu_option_ingredients','addons','addon_ingredients','orders','order_items','order_item_options','order_ingredient_usages','restaurant_tables','dining_sessions','profiles','categories','ingredient_categories','payments']){
     const rows=[];for(let offset=0;;offset+=1000){
       let q=db.from(table).select('*');
       if(table==='menu_ingredients')q=q.order('menu_id').order('ingredient_id');

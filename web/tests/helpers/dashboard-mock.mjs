@@ -69,6 +69,10 @@ export async function startMock(port = 4401) {
           }
           order.updated_at = state.updatedAt;
         } else if (path.endsWith('/serve_order_plate')) { state.status = 'served'; state.servedAt = state.updatedAt; }
+        else if (!state.catalog.orders && body.p_item_id === 1) {
+          // The default fixture has exactly one dish with one plate.
+          state.status = body.p_completed ? 'ready' : 'preparing';
+        }
       }
       if (path.endsWith('/serve_order')) { state.status = 'served'; state.servedAt = state.updatedAt; }
       if (path.endsWith('/complete_order_payment')) {
@@ -109,7 +113,7 @@ export async function startMock(port = 4401) {
       res.setHeader('content-range', '0-0/1');
     } else { status = 404; data = { error: 'unhandled mock path' }; }
     if (state.failWrite && !['GET', 'HEAD'].includes(req.method)) { status = 503; data = { message: 'test write unavailable', code: '08006' }; }
-    state.requests.push({ path, method: req.method, ms: Math.round(performance.now()-start), status, at: Date.now() });
+    state.requests.push({ path, select: url.searchParams.get('select'), method: req.method, ms: Math.round(performance.now()-start), status, at: Date.now() });
     res.writeHead(status, { 'Content-Type': 'application/json' });
     res.end(req.method === 'HEAD' ? undefined : JSON.stringify(data));
   });

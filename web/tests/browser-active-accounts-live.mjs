@@ -26,7 +26,7 @@ const pass = label => { state.checks.push(label); save(); console.log(`PASS ${la
 const tables = ['menus','ingredients','menu_ingredients','menu_options','menu_option_groups',
   'menu_option_ingredients','addons','addon_ingredients','orders','order_items','order_item_options',
   'order_ingredient_usages','restaurant_tables','restaurant_table_aliases','dining_sessions',
-  'profiles','categories','ingredient_categories','payments','reviews'];
+  'profiles','categories','ingredient_categories','payments'];
 async function fingerprint() {
   const result = {};
   for (const table of tables) {

@@ -72,11 +72,22 @@ export default async function NewIngredientPage({
       );
     }
 
-    let reset;
-    try { reset = readIngredientReset(formData); }
-    catch (cause) { newIngredientErrorRedirect(cause instanceof Error ? cause.message : "Invalid reset schedule"); }
+    let reset: ReturnType<typeof readIngredientReset>;
+    try {
+      reset = readIngredientReset(formData);
+    } catch (cause) {
+      newIngredientErrorRedirect(cause instanceof Error ? cause.message : "Invalid reset schedule");
+    }
     const { error } = await supabase.rpc("save_ingredient", {
-      p_id: null, p_values: { name, unit, stock_quantity: stockQuantity, minimum_stock: minimumStock, category_id: categoryId, ...reset },
+      p_id: null,
+      p_values: {
+        name,
+        unit,
+        stock_quantity: stockQuantity,
+        minimum_stock: minimumStock,
+        category_id: categoryId,
+        ...reset,
+      },
     });
 
     if (error) {

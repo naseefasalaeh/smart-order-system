@@ -6,13 +6,26 @@ process.loadEnvFile('.env.local');
 const db = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY, { auth: { persistSession: false } });
 const root = `.test-artifacts/catalog-backup-${new Date().toISOString().replace(/[:.]/g, '-')}`;
 mkdirSync(root, { recursive: true });
-const tables = ['categories','ingredient_categories','menus','ingredients','menu_ingredients','menu_option_groups','menu_options','menu_option_ingredients','addons','addon_ingredients','orders','order_items','order_item_options','order_ingredient_usages','payments','restaurant_tables','dining_sessions','profiles','reviews'];
+const response = await fetch(`${process.env.NEXT_PUBLIC_SUPABASE_URL}/rest/v1/`, { headers: { apikey: process.env.SUPABASE_SERVICE_ROLE_KEY, Authorization: `Bearer ${process.env.SUPABASE_SERVICE_ROLE_KEY}` } });
+if (!response.ok) throw new Error(`Schema read: ${response.status}`);
+const schema = await response.json();
+// Discover exposed tables/views so new tables are included and retired ones
+// disappear naturally. RPC paths are excluded; this script never calls them.
+const tables = Object.keys(schema.paths)
+  .filter(path => /^\/\w+$/.test(path))
+  .map(path => path.slice(1))
+  .sort();
 const manifest = {};
 for (const table of tables) {
+  const columns = Object.entries(schema.definitions[table].properties);
+  const primaryKeys = columns.filter(([, column]) => column.description?.includes('<pk/>'));
+  const sortColumns = primaryKeys.length ? primaryKeys : columns.filter(([, column]) =>
+    ['integer', 'number', 'string', 'boolean'].includes(column.type));
+  if (!sortColumns.length) throw new Error(`${table}: no stable pagination columns`);
   const rows = [];
   for (let offset = 0;; offset += 1000) {
-    let q = db.from(table).select('*').order(table === 'menu_ingredients' ? 'menu_id' : table === 'addon_ingredients' ? 'addon_id' : 'id');
-    if (table === 'menu_ingredients' || table === 'addon_ingredients') q = q.order('ingredient_id');
+    let q = db.from(table).select('*');
+    for (const [column] of sortColumns) q = q.order(column);
     const { data, error } = await q.range(offset, offset + 999);
     if (error) throw new Error(`${table}: ${error.code}`);
     rows.push(...data);
@@ -22,8 +35,6 @@ for (const table of tables) {
   writeFileSync(`${root}/${table}.json`, json);
   manifest[table] = { count: rows.length, sha256: createHash('sha256').update(json).digest('hex') };
 }
-const response = await fetch(`${process.env.NEXT_PUBLIC_SUPABASE_URL}/rest/v1/`, { headers: { apikey: process.env.SUPABASE_SERVICE_ROLE_KEY, Authorization: `Bearer ${process.env.SUPABASE_SERVICE_ROLE_KEY}` } });
-if (!response.ok) throw new Error(`Schema read: ${response.status}`);
-writeFileSync(`${root}/openapi.json`, JSON.stringify(await response.json(), null, 2));
+writeFileSync(`${root}/openapi.json`, JSON.stringify(schema, null, 2));
 writeFileSync(`${root}/manifest.json`, JSON.stringify(manifest, null, 2));
 console.log(JSON.stringify({ backup: root, tables: Object.fromEntries(Object.entries(manifest).map(([k,v]) => [k,v.count])) }, null, 2));

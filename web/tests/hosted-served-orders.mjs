@@ -31,7 +31,7 @@ const exclude=(name,row)=>{
  if(registry.rows.some(r=>r.table===name&&r.id===row.id))return true;
  if(name==='orders')return registry.orders.includes(row.id);
  if(name==='dining_sessions')return registry.sessions.includes(row.id);
- if(['order_items','order_ingredient_usages','payments','reviews'].includes(name))return registry.orders.includes(row.order_id);
+ if(['order_items','order_ingredient_usages','payments'].includes(name))return registry.orders.includes(row.order_id);
  if(name==='order_item_options')return registry.itemIds.includes(row.order_item_id);
  if(['menu_ingredients','menu_stock_availability','effective_menu_options'].includes(name))return row.menu_id===menu;
  if(name==='restaurant_table_aliases')return row.table_id===table;

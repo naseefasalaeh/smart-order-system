@@ -28,7 +28,7 @@ async function insert(table, fields, key) {
 }
 async function fingerprint() {
   const result = {};
-  for (const table of ["menus","ingredients","menu_ingredients","menu_options","menu_option_groups","menu_option_ingredients","orders","order_items","order_item_options","order_ingredient_usages","restaurant_tables","dining_sessions","profiles","categories","ingredient_categories","payments","reviews"]) {
+  for (const table of ["menus","ingredients","menu_ingredients","menu_options","menu_option_groups","menu_option_ingredients","orders","order_items","order_item_options","order_ingredient_usages","restaurant_tables","dining_sessions","profiles","categories","ingredient_categories","payments"]) {
     const rows = [];
     for (let start = 0; ; start += 1000) {
       let query = db.from(table).select("*").order(table === "menu_ingredients" ? "menu_id" : "id");

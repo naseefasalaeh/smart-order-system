@@ -107,13 +107,16 @@ export async function checkLiveDashboard({ context, page, mock, results, mode })
   mock.state.requests.length = 0;
   // Same-task duplicate clicks exercise the ref lock before React renders disabled.
   await page.getByRole('button', { name: 'เริ่มทำอาหาร', exact: true }).evaluate(button => { button.click(); button.click(); });
-  await page.getByRole('button', { name: 'อาหารพร้อมเสิร์ฟ', exact: true }).waitFor();
+  await page.getByRole('checkbox', { name: 'จานที่ 1', exact: true }).waitFor();
   assert.equal(mock.state.requests.filter(r => r.path.endsWith('/advance_order_status')).length, 1);
   assert.equal(await page.getByRole('button', { name: 'ยกเลิกออเดอร์', exact: true }).count(), 0);
-  await page.getByRole('button', { name: 'อาหารพร้อมเสิร์ฟ', exact: true }).click();
+  await page.getByRole('checkbox', { name: 'จานที่ 1', exact: true }).click();
   await page.getByText('อาหารพร้อมเสิร์ฟ รอพนักงาน', { exact: false }).waitFor();
+  const plateWrites = mock.state.requests.filter(r => r.path.endsWith('/set_kitchen_plate'));
+  assert.equal(plateWrites.length, 1);
+  assert.equal(mock.state.status, 'ready');
   assert.equal(await page.getByRole('button', { name: 'รับชำระเงิน', exact: true }).count(), 0);
-  results.checks.push('kitchen_staff: start/ready succeeds, double click = one RPC, no cancel/payment controls');
+  results.checks.push('kitchen_staff: start/plate completion succeeds, double click = one RPC, no cancel/payment controls');
 
   mock.state.role = 'staff'; mock.state.status = 'confirmed';
   await goto('/dashboard/orders');
@@ -122,14 +125,16 @@ export async function checkLiveDashboard({ context, page, mock, results, mode })
   mock.state.status = 'preparing'; emit(); emit(); emit();
   await page.getByText('กำลังทำ', { exact: true }).first().waitFor();
   await page.waitForTimeout(500);
-  assert.equal(mock.state.requests.filter(r => r.path === '/rest/v1/orders').length, 1, 'burst coalesces into one order read');
-  assert.equal(mock.state.requests.filter(r => r.path === '/auth/v1/user').length, 0);
-  results.checks.push('Realtime joined: burst coalesced, UI updated without full-page/auth reload');
+  const orderReads = mock.state.requests.filter(r => r.path === '/rest/v1/orders');
+  assert.equal(orderReads.filter(r => r.select?.includes('total_amount')).length, 1, 'burst coalesces into one detailed view read');
+  assert.equal(orderReads.filter(r => !r.select?.includes('total_amount')).length, 1, 'burst coalesces into one workload read');
+  assert.equal(mock.state.requests.filter(r => r.path === '/auth/v1/user').length, 1, 'workload refresh verifies the user once');
+  results.checks.push('Realtime joined: one read per view/workload, one workload identity check, UI updated without full-page reload');
 
   // Hold a real browser response after the server snapshot, then send a newer event.
   let release, captured = false;
   const gate = new Promise(resolve => { release = resolve; });
-  await page.route('**/rest/v1/orders?**', async route => {
+  await page.route(url => url.pathname === '/rest/v1/orders' && url.searchParams.get('select')?.includes('total_amount'), async route => {
     const response = await route.fetch();
     captured = true; await gate; await route.fulfill({ response });
   }, { times: 1 });

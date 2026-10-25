@@ -103,18 +103,30 @@ export default async function EditIngredientPage({
       }
     }
 
-    let reset;
-    try { reset = readIngredientReset(formData); }
-    catch (cause) { editIngredientErrorRedirect(id, cause instanceof Error ? cause.message : "Invalid reset schedule"); }
+    let reset: ReturnType<typeof readIngredientReset>;
+    try {
+      reset = readIngredientReset(formData);
+    } catch (cause) {
+      editIngredientErrorRedirect(id, cause instanceof Error ? cause.message : "Invalid reset schedule");
+    }
+    // Metadata-only edits must not overwrite stock changed by an order or cron.
+    const stockChanged = stockQuantity !== Number(formData.get("original_stock"));
     const { error: updateError } = await supabase.rpc("save_ingredient", {
       p_id: Number(id),
       p_expected_updated_at: String(formData.get("expected_updated_at") ?? "") || null,
-      p_values: { name, unit, minimum_stock: minimumStock, category_id: categoryId, ...reset,
-        ...(stockQuantity !== Number(formData.get("original_stock")) ? { stock_quantity: stockQuantity } : {}),
+      p_values: {
+        name,
+        unit,
+        minimum_stock: minimumStock,
+        category_id: categoryId,
+        ...reset,
+        ...(stockChanged ? { stock_quantity: stockQuantity } : {}),
       },
     });
 
-    if (updateError?.message === "INGREDIENT_CHANGED") editIngredientErrorRedirect(id, "ข้อมูลสต็อกเปลี่ยนแล้ว กรุณาตรวจยอดล่าสุดและบันทึกอีกครั้ง");
+    if (updateError?.message === "INGREDIENT_CHANGED") {
+      editIngredientErrorRedirect(id, "ข้อมูลสต็อกเปลี่ยนแล้ว กรุณาตรวจยอดล่าสุดและบันทึกอีกครั้ง");
+    }
     if (updateError) {
       if (updateError.code !== "23505") {
         console.error("Failed to update ingredient", updateError);

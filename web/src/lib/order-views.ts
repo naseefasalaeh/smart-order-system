@@ -66,20 +66,6 @@ export async function loadPendingPayments(supabase: SupabaseClient) {
   return { orders: error ? [] : pending.orders, error };
 }
 
-const currentOrderFilters = [
-  { label: "ทั้งหมด", value: "" },
-  { label: "รอเริ่มทำ", value: "confirmed" },
-  { label: "กำลังทำ", value: "preparing" },
-  { label: "พร้อมเสิร์ฟ", value: "ready" },
-  { label: "เสิร์ฟแล้ว รอชำระเงิน", value: "served" },
-];
-
-const historyOrderFilters = [
-  { label: "ทั้งหมด", value: "history" },
-  { label: "เสร็จสิ้น", value: "completed" },
-  { label: "ยกเลิก", value: "cancelled" },
-];
-
 const currentStatuses = ["confirmed", "preparing", "ready", "served"];
 const historyStatuses = ["completed", "cancelled"];
 const allowedStatuses = ["partially_served", ...currentStatuses, ...historyStatuses, "history"];
@@ -88,7 +74,6 @@ export async function loadOrders(supabase: SupabaseClient, status?: string, date
   const activeStatus = status && allowedStatuses.includes(status) ? status : "";
   const isHistory =
     activeStatus === "history" || historyStatuses.includes(activeStatus);
-  const visibleFilters = isHistory ? historyOrderFilters : currentOrderFilters;
   const selectedDay = bangkokDayRange(date ?? "") ? date! : bangkokToday();
   const dayRange = bangkokDayRange(selectedDay)!;
   const dayLabel = new Date(`${selectedDay}T12:00:00+07:00`).toLocaleDateString("th-TH", {
@@ -158,6 +143,6 @@ export async function loadOrders(supabase: SupabaseClient, status?: string, date
   const visibleOrders = activeStatus === "ready"
     ? pending.orders.filter(order => order.order_items?.some(item => pendingPlates(item).length > 0))
     : activeStatus === "partially_served" ? pending.orders.filter(order => orderDisplayStatus(order) === "partially_served") : pending.orders;
-  return { orders: visibleOrders, activeStatus, isHistory, visibleFilters, selectedDay, dayLabel, daySales, error: Boolean(error || pending.error || paymentsResult.error || dayCompletedResult.error) };
+  return { orders: visibleOrders, activeStatus, isHistory, selectedDay, dayLabel, daySales, error: Boolean(error || pending.error || paymentsResult.error || dayCompletedResult.error) };
 }
 
