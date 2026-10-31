@@ -1,6 +1,9 @@
 "use client";
 import { OrderWorkloadProvider } from "@/components/order-workload-context";
 import PlateProgress from "@/components/plate-progress";
+import PaymentProgress from "@/components/payment-progress";
+import PaymentHistory from "@/components/payment-history";
+import { paidItemQuantity } from "@/lib/payment-progress";
 import ServePlateButton from "@/components/serve-plate-button";
 import { pendingPlates, orderDisplayStatus } from "@/lib/plate-progress";
 import DashboardSidebar from "@/components/dashboard-sidebar";
@@ -167,6 +170,7 @@ export default function OrdersView({ initial, userId, fullName, role, status, da
                                   ))}
 
                                   {!isHistory && <PlateProgress item={item} status={order.status} />}
+                                  {order.status !== "cancelled" && <PaymentProgress item={item} />}
                                   {!isHistory && role === "staff" && <div className="mt-3 flex flex-wrap gap-2">{pendingPlates(item).map(plate => <ServePlateButton key={plate} itemId={item.id} plate={plate} takeaway={order.dining_type === "takeaway"} />)}</div>}
                                   {item.note && (
                                     <p className="mt-1 text-sm text-orange-600">
@@ -211,12 +215,13 @@ export default function OrdersView({ initial, userId, fullName, role, status, da
                       {!isHistory && <UpdateOrderStatusButton
                         orderId={order.id}
                         currentStatus={order.status}
-                        totalAmount={Number(order.total_amount ?? 0)}
+                        totalAmount={order.order_items.reduce((sum, item) => sum + Math.round(Number(item.unit_price) * 100) * (item.quantity - paidItemQuantity(item)), 0) / 100}
                         canAdvanceStatus={canAdvanceStatus}
                         canServeAndPay={role === "staff" && order.status === "served"}
                         diningType={order.dining_type}
                       />}
                     </div>
+                    <PaymentHistory items={order.order_items} />
                   </article>
                 );
               })}

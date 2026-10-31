@@ -1,6 +1,8 @@
 "use client";
 
 import PlateProgress from "@/components/plate-progress";
+import PaymentProgress from "@/components/payment-progress";
+import { paidItemQuantity, type PaymentAllocation } from "@/lib/payment-progress";
 import { orderDisplayStatus } from "@/lib/plate-progress";
 import Link from "next/link";
 import { useCustomerOrderEvents } from "@/components/customer-order-events";
@@ -14,6 +16,7 @@ type OrderOption = {
 };
 
 type OrderItem = {
+  payment_allocations?: PaymentAllocation[];
   menu_name_snapshot: string;
   menu_price_snapshot: number;
   id: number;
@@ -228,7 +231,7 @@ export default function CustomerOrdersClient({ tableId, tableNumber, legacyRefer
     () =>
       orders
         .filter((order) => order.status !== "cancelled")
-        .reduce((sum, order) => sum + Number(order.total_amount), 0),
+        .reduce((sum, order) => sum + order.order_items.reduce((total, item) => total + Math.round(Number(item.unit_price) * 100) * (item.quantity - paidItemQuantity(item)), 0) / 100, 0),
     [orders],
   );
 
@@ -315,6 +318,7 @@ export default function CustomerOrdersClient({ tableId, tableNumber, legacyRefer
                         </p>
                       ))}
                       <PlateProgress item={item} status={order.status} />
+                      <PaymentProgress item={item} />
                       {item.note && <p className="mt-1 text-sm text-zinc-500">{item.note}</p>}
                     </div>
                   ))}

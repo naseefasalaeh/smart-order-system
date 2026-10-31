@@ -6,10 +6,12 @@ import assert from 'node:assert/strict';
 import { chromium } from 'playwright';
 import { startMock } from './helpers/dashboard-mock.mjs';
 import { checkSidebarNavigation } from './helpers/sidebar-navigation-checks.mjs';
-import { checkPendingPayments } from './helpers/pending-payment-checks.mjs';
+import { checkPendingPayments } from './helpers/item-payment-checks.mjs';
 import { checkOrderWorkload } from './helpers/order-workload-checks.mjs';
 import { checkPartialPlates } from './helpers/partial-plate-checks.mjs';
 import { checkIngredientResets } from './helpers/ingredient-reset-checks.mjs';
+import { checkReadySound } from './helpers/ready-sound-checks.mjs';
+import { checkMembership } from './helpers/membership-checks.mjs';
 mkdirSync('.test-artifacts/served-orders', { recursive: true });
 const log = createWriteStream('.test-artifacts/served-orders/browser.log');
 const mock = await startMock();
@@ -68,15 +70,12 @@ try {
       assert.equal(mock.state.status,'served');
       assert.equal(mock.state.requests.filter(r => r.path.endsWith('/serve_order_plate')).length-before,1);
       await page.goto('http://localhost:4400/dashboard/payments');
-      await page.locator('article').waitFor();
-      assert.match(await page.locator('article').innerText(),/เสิร์ฟแล้ว รอชำระเงิน/);
-      assert.ok(mock.state.servedAt);
-      await page.getByRole('button',{name:'รับชำระเงิน',exact:true}).click();
-      const cash = page.getByRole('button',{name:dining === 'dine_in' ? 'เงินสด' : 'QR Code',exact:true});
-      const paidBefore = mock.state.requests.filter(r => r.path.endsWith('/complete_order_payment')).length;
+      await page.locator('section.rounded-2xl').filter({has:page.locator('input[type=number]')}).getByRole('button').first().click();
+      const cash = page.locator('section.rounded-2xl').filter({has:page.locator('input[type=number]')}).getByRole('button').nth(dining === 'dine_in' ? 1 : 2);
+      const paidBefore = mock.state.requests.filter(r => r.path.endsWith('/collect_item_payment')).length;
       await cash.evaluate(el => { el.click(); el.click(); });
-      await page.locator('article').waitFor({state:'hidden'});
-      assert.equal(mock.state.requests.filter(r => r.path.endsWith('/complete_order_payment')).length-paidBefore,1);
+      await page.locator('input[type=number]').waitFor({state:'hidden'});
+      assert.equal(mock.state.requests.filter(r => r.path.endsWith('/collect_item_payment')).length-paidBefore,1);
       assert.equal(mock.state.status,'completed');
     }
   }
@@ -99,10 +98,10 @@ try {
   await page.waitForTimeout(1000);
   mock.state.status = 'served'; mock.state.servedAt = new Date().toISOString(); emit();
   await page.locator('article').waitFor({state:'hidden'});
-  await other.getByRole('button',{name:'รับชำระเงิน',exact:true}).waitFor();
+  await other.locator('input[type=number]').waitFor();
   await summary.getByRole('button',{name:'รับชำระเงิน',exact:true}).waitFor();
   mock.state.status = 'completed'; emit();
-  await other.locator('article').waitFor({state:'hidden'});
+  await other.locator('input[type=number]').waitFor({state:'hidden'});
   await summary.locator('article').waitFor({state:'hidden'});
   await summary.close();
   // Customer status uses the existing private-session polling endpoint.
@@ -112,10 +111,12 @@ try {
   await page.getByText('เสิร์ฟแล้ว กรุณาชำระเงินที่เคาน์เตอร์',{exact:true}).waitFor();
   const results = { checks: [] };
   await other.close();
+  await checkReadySound({ page, mock, emit });
   await checkPendingPayments({ page, context, mock, emit, dir: '.test-artifacts/served-orders' });
   await checkOrderWorkload({ page, mock, emit, dir: '.test-artifacts/served-orders' });
   await checkPartialPlates({ page, context, mock, emit, dir: '.test-artifacts/served-orders' });
   await checkSidebarNavigation({ page, context, mock, results, dir: '.test-artifacts/served-orders' });
+  await checkMembership({ page, context, mock });
   console.log('PASS: Staff dine-in/takeaway, serve/payment double click, Kitchen permissions, two-view Realtime, customer message, desktop/mobile sidebar navigation');
   }
 } finally {

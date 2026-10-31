@@ -83,6 +83,8 @@ test('catalog + actual order API + SQL stock transaction regression', async (t) 
       },
     };
     const { POST } = loadTs('src/app/api/orders/route.ts',{
+      'next/headers': { cookies: async () => ({ get: () => undefined }) },
+      '@/lib/member-input': { memberCookie: 'smart-order-member' },
       'next/server': { NextResponse: { json: (data,init) => Response.json(data,init) } },
       'node:crypto':{createHash},'@/lib/menu-option-groups':groupRules,'@/lib/supabase/admin':{createAdminClient:()=>sdk},
     });

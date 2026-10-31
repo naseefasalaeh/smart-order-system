@@ -52,6 +52,7 @@ export async function POST(request: Request) {
           served_plates,
           unit_price,
           subtotal,
+          payment_allocations(quantity,amount_satang,payments(status)),
           note,
           menu_name_snapshot,
           menu_price_snapshot,

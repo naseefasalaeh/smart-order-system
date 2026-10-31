@@ -33,6 +33,14 @@ export async function startMock(port = 4401) {
     else if (path.startsWith('/rest/v1/rpc/')) {
       state.rpcCalls.push({ path, body });
       state.updatedAt = new Date().toISOString();
+      if (path.endsWith('/member_menu_statistics')) data=[];
+      if (path.endsWith('/enroll_member')) {
+        state.catalog.member_devices=[{token_hash:body.p_hash,active:!state.memberExists,created_at:state.updatedAt,members:{phone:body.p_phone}}];
+      }
+      if (path.endsWith('/review_member_device')) {
+        const device=state.catalog.member_devices?.find(d=>d.token_hash===body.p_hash);
+        if(device) device.active=true;
+      }
       if (path.endsWith('/save_ingredient')) {
         const ingredients = state.catalog.ingredients ??= [ingredient];
         let saved = ingredients.find(item => item.id === body.p_id);
@@ -75,6 +83,26 @@ export async function startMock(port = 4401) {
         }
       }
       if (path.endsWith('/serve_order')) { state.status = 'served'; state.servedAt = state.updatedAt; }
+      if (path.endsWith('/collect_item_payment')) {
+        state.receipts ??= new Map();
+        if (state.receipts.has(body.p_request_id)) data = state.receipts.get(body.p_request_id);
+        else {
+          let total = 0;
+          for (const line of body.p_items) {
+            const order = state.catalog.orders?.find(order => order.order_items.some(item => item.id === line.item_id));
+            if (order) {
+              const item = order.order_items.find(item => item.id === line.item_id);
+              const amount = Math.round(Number(item.unit_price) * 100) * line.quantity;
+              total += amount;
+              (item.payment_allocations ??= []).push({ quantity: line.quantity, amount_satang: amount, payments: { status: 'paid' } });
+              if (order.order_items.every(item => (item.payment_allocations ?? []).reduce((sum,a)=>sum+a.quantity,0) === item.quantity)) order.status = 'completed';
+              order.updated_at = state.updatedAt;
+            } else { total += 5000; state.status = 'completed'; }
+          }
+          data = { payment_id: body.p_request_id, amount_satang: total };
+          state.receipts.set(body.p_request_id,data);
+        }
+      }
       if (path.endsWith('/complete_order_payment')) {
         state.status = 'completed';
         const paidOrder = state.catalog.orders?.find(order => order.id === body.p_order_id);
@@ -106,6 +134,11 @@ export async function startMock(port = 4401) {
         const filter = url.searchParams.get('status');
         data = data.filter(order => filter === `eq.${order.status}` || (filter.startsWith('in.') && filter.includes(order.status)));
       }
+      if (resource === 'orders' && url.searchParams.get('session_id')?.startsWith('in.')) {
+        const sessions=url.searchParams.get('session_id').slice(4,-1).split(',');
+        data=data.filter(order=>sessions.includes(order.session_id));
+      }
+      if (resource === 'payments' && url.searchParams.get('status')?.startsWith('eq.')) data=data.filter(payment=>payment.status===url.searchParams.get('status').slice(3));
       if (req.method === 'PATCH') { Object.assign(data[0] || {}, body); }
       if (req.headers.accept?.includes('application/vnd.pgrst.object+json')) data = data[0] || null;
       if (resource === 'profiles' && state.profileError) { status = 503; data = { message: 'test profile unavailable', code: '08006' }; }

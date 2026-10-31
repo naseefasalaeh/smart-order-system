@@ -2,6 +2,7 @@ import { pendingPlates, orderDisplayStatus } from "@/lib/plate-progress";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { filterUnpaidOrders } from "@/lib/unpaid-orders";
 import { bangkokDayRange, bangkokToday } from "@/lib/bangkok-date";
+import { paidItemQuantity } from "@/lib/payment-progress";
 
 export async function loadKitchenOrders(supabase: SupabaseClient) {
   const { data: orders, error } = await supabase
@@ -55,15 +56,21 @@ export async function loadReadyOrders(supabase: SupabaseClient) {
 }
 
 export async function loadPendingPayments(supabase: SupabaseClient) {
-  const result = await supabase.from("orders").select(`
-    id,order_number,dining_type,status,created_at,served_at,note,total_amount,
+  const columns = `
+    id,order_number,session_id,dining_type,status,created_at,served_at,note,total_amount,
     restaurant_tables(table_number),
-    order_items(id,quantity,note,menu_name_snapshot,completed_plates,served_plates,menus(name),
+    order_items(id,quantity,unit_price,note,menu_name_snapshot,completed_plates,served_plates,menus(name),
+      payment_allocations(quantity,amount_satang,payments(id,status,payment_method,paid_at)),
       order_item_options(id,option_name,quantity))
-  `).eq("status", "served").order("served_at", { ascending: true });
-  const pending = await filterUnpaidOrders(supabase, (result.data ?? []).filter(order => order.status === "served"));
-  const error = Boolean(result.error || pending.error);
-  return { orders: error ? [] : pending.orders, error };
+  `;
+  const result = await supabase.from("orders").select(columns).eq("status", "served").order("served_at", { ascending: true });
+  const orders = [...new Map((result.data ?? []).map(order => [order.id, order])).values()]
+    .filter(order => order.order_items.some(item => paidItemQuantity(item) < item.quantity));
+  const sessions = [...new Set(orders.map(order => order.session_id).filter((id): id is string => Boolean(id)))];
+  const settled = sessions.length
+    ? await supabase.from("orders").select(columns).eq("status", "completed").in("session_id", sessions)
+    : { data: [], error: null };
+  return { orders: [...orders, ...(settled.data ?? [])], error: Boolean(result.error || settled.error) };
 }
 
 const currentStatuses = ["confirmed", "preparing", "ready", "served"];
@@ -100,6 +107,7 @@ export async function loadOrders(supabase: SupabaseClient, status?: string, date
       served_plates,
       unit_price,
       subtotal,
+      payment_allocations(quantity,amount_satang,payments(id,status,payment_method,paid_at)),
       note,
       menu_name_snapshot,
       menus (
@@ -131,12 +139,10 @@ export async function loadOrders(supabase: SupabaseClient, status?: string, date
   }), isHistory
     ? supabase.from("orders").select("id").eq("status", "completed").gte("updated_at", dayRange.start).lt("updated_at", dayRange.end)
     : Promise.resolve({ data: [], error: null })]);
-  const completedIds = (dayCompletedResult.data ?? []).map((order) => order.id);
-  const paymentsResult = completedIds.length
-    ? await supabase.from("payments").select("order_id,amount,status").in("order_id", completedIds).eq("status", "paid")
+  const paymentsResult = isHistory
+    ? await supabase.from("payments").select("id,amount,status").eq("status", "paid").gte("paid_at", dayRange.start).lt("paid_at", dayRange.end)
     : { data: [], error: null };
-  const paidByOrder = new Map((paymentsResult.data ?? []).map((payment) => [payment.order_id, Number(payment.amount)]));
-  const daySales = [...paidByOrder.values()].reduce((sum, amount) => sum + amount, 0);
+  const daySales = [...new Map((paymentsResult.data ?? []).map(payment => [payment.id, Number(payment.amount)])).values()].reduce((sum, amount) => sum + amount, 0);
 
   const pending = isHistory ? { orders: orders ?? [], error: false }
     : await filterUnpaidOrders(supabase, orders ?? []);

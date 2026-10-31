@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
 import { createHash } from "node:crypto";
+import { cookies } from "next/headers";
+import { memberCookie } from "@/lib/member-input";
 import {
   type MenuOptionGroupRule,
   type MenuOptionRule,
@@ -632,8 +634,11 @@ export async function POST(request: Request) {
       })),
     }));
 
+    const memberToken = (await cookies()).get(memberCookie)?.value;
+    const memberHash = memberToken && /^[a-f0-9]{64}$/.test(memberToken)
+      ? createHash("sha256").update(memberToken).digest("hex") : null;
     const { data: createdOrder, error: createOrderError } = await supabase
-      .rpc("create_order_with_stock", {
+      .rpc(memberHash ? "create_member_order" : "create_order_with_stock", {
         p_table_id: numericTableId,
         p_dining_type: diningType,
         p_session_token: sessionToken,
@@ -642,6 +647,7 @@ export async function POST(request: Request) {
         p_items: itemsForTransaction,
         p_required_items: requiredItems,
         ...(body.requestId ? { p_request_id: body.requestId, p_request_fingerprint: requestFingerprint } : {}),
+        ...(memberHash ? { p_member_hash: memberHash, p_request_id: body.requestId ?? null, p_request_fingerprint: body.requestId ? requestFingerprint : null } : {}),
       })
       .single();
 

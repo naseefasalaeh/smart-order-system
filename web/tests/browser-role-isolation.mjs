@@ -38,7 +38,7 @@ try {
 
   const routes = {
     admin: ['/dashboard','/dashboard/menus','/dashboard/ingredients','/dashboard/tables','/dashboard/addons','/dashboard/reports','/dashboard/users'],
-    staff: ['/dashboard/orders','/dashboard/ready'],
+    staff: ['/dashboard/orders','/dashboard/ready','/dashboard/payments','/dashboard/members'],
     kitchen_staff: ['/dashboard/kitchen'],
   };
   const paths=[...new Set(Object.values(routes).flat()),'/dashboard/menus/new','/dashboard/menus/1/edit','/dashboard/menus/1/options','/dashboard/ingredients/new','/dashboard/ingredients/1/edit','/dashboard/ingredients/categories'];

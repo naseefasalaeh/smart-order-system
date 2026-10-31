@@ -82,10 +82,10 @@ export async function checkPartialPlates({ page, context, mock, emit, dir }) {
   await page.locator('article').waitFor({state:'hidden'});
   assert.equal(first.status,'served');
   await page.goto('http://localhost:4400/dashboard/payments');
-  await page.getByRole('button',{name:'รับชำระเงิน',exact:true}).click();
-  await page.getByRole('button',{name:'เงินสด',exact:true}).click();
+  await page.getByRole('button',{name:'เลือกทั้งหมดที่ค้างในรอบนี้',exact:true}).click();
+  await page.getByRole('button',{name:'รับเงินสดแล้ว',exact:true}).click();
   await page.getByText('ไม่มีรายการรอชำระเงิน',{exact:true}).waitFor();
-  assert.equal(mock.state.catalog.payments[0].amount,150);
+  assert.equal([...mock.state.receipts.values()].at(-1).amount_satang,15000);
   assert.equal(next.status,'preparing','paying previous order does not alter next kitchen order');
   delete mock.state.catalog.orders; delete mock.state.catalog.payments;
   emit();

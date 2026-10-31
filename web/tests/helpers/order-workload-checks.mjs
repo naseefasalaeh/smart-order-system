@@ -13,7 +13,7 @@ export async function checkOrderWorkload({ page, mock, emit, dir }) {
     total_amount: 50, restaurant_tables: { table_number: String(number) }, order_items: [{ id: number, quantity: 1, menu_name_snapshot: "TEST dish", completed_plates: ["ready","served","completed"].includes(status) ? [1] : [], served_plates: ["served","completed"].includes(status) ? [1] : [], order_item_options: [] }],
   });
   const confirmed = order(31,'confirmed'), preparing = order(32,'preparing'), ready = order(33,'ready');
-  const served = order(34,'served'), paid = order(35,'served');
+  const served = order(34,'served'), paid = order(35,'completed');
   mock.state.catalog.orders = [confirmed, preparing, ready, served, paid, ready, order(36,'completed'), order(37,'cancelled')];
   mock.state.catalog.payments = [{ order_id: paid.id, status: 'paid' }, { order_id: served.id, status: 'failed' }];
   await page.goto('http://localhost:4400/dashboard/payments');

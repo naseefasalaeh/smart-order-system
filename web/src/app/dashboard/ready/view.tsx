@@ -1,4 +1,6 @@
 "use client";
+import { useCallback, useState } from "react";
+import ReadyPlateAlerts from "@/components/ready-plate-alerts";
 import ServePlateButton from "@/components/serve-plate-button";
 import PlateProgress from "@/components/plate-progress";
 import { pendingPlates, orderDisplayStatus } from "@/lib/plate-progress";
@@ -13,6 +15,8 @@ export default function OrdersView({ initial, userId, fullName, role }: { initia
   const { data, refresh, refreshAfterMutation, error: liveError } = useLiveOrderView(initial, userId, role, allowed, load);
   const { orders, error } = data;
   const visibleOrders = orders;
+  const [newPlates, setNewPlates] = useState<Set<string>>(() => new Set());
+  const markNew = useCallback((keys: string[]) => setNewPlates(previous => new Set([...previous, ...keys])), []);
   return (
     <OrderViewRefresh.Provider value={refreshAfterMutation}>
     <main className="min-h-screen bg-orange-50 text-zinc-900 lg:flex">
@@ -26,6 +30,7 @@ export default function OrdersView({ initial, userId, fullName, role }: { initia
             <h2 className="mt-1 text-3xl font-bold">พร้อมเสิร์ฟ</h2>
             <p className="mt-2 text-zinc-600">จานที่ครัวทำเสร็จแล้ว ยืนยันเสิร์ฟทีละจานได้ทันที โดยไม่ต้องรอครบทั้งออเดอร์</p>
           </header>
+          <ReadyPlateAlerts orders={orders ?? []} valid={!error} onNew={markNew} />
 
           {error ? (
             <div role="alert" className="mt-8 rounded-2xl bg-red-50 p-6 text-red-700 shadow-sm">โหลดออเดอร์ไม่สำเร็จ กรุณาลองใหม่<OrderViewRetry refresh={refresh} /></div>
@@ -52,7 +57,8 @@ export default function OrdersView({ initial, userId, fullName, role }: { initia
                       {order.order_items?.map((item) => {
                         const menu = Array.isArray(item.menus) ? item.menus[0] : item.menus;
                         return (
-                          <li key={item.id} className="min-w-0">
+                          <li key={item.id} className={`min-w-0 ${pendingPlates(item).some(plate => newPlates.has(`${order.id}:${item.id}:${plate}`)) ? "rounded-xl bg-amber-50 p-3 ring-2 ring-amber-400" : ""}`}>
+                            {pendingPlates(item).some(plate => newPlates.has(`${order.id}:${item.id}:${plate}`)) && <p className="text-sm font-semibold text-amber-800">พร้อมเสิร์ฟใหม่</p>}
                             <p className="break-words font-semibold">{item.menu_name_snapshot ?? menu?.name ?? "ไม่พบชื่อเมนู"} <span className="whitespace-nowrap text-orange-700">× {item.quantity}</span></p>
                             {item.order_item_options?.map((option) => <p key={option.id} className="mt-1 text-sm text-orange-700">{option.option_name} × {option.quantity} ต่อจาน</p>)}
                             <PlateProgress item={item} status={order.status} />

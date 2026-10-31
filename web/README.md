@@ -36,6 +36,8 @@ Admin จัดการข้อมูลร้านและรายงา�
 
 ## ตรวจงาน
 
+ฟีเจอร์เสียงพร้อมเสิร์ฟ การชำระบางรายการ/รวมรอบโต๊ะ และสมาชิกสมัครใจ: อ่าน [โครงสร้าง การทดสอบ ข้อจำกัดฐานจริง และ rollback](docs/ready-payments-members.md) ก่อนนำ migration ใหม่ไปใช้ ฐาน production ยังไม่ได้เปลี่ยนโดยงานนี้
+
 - `npm run lint`
 - `npx --no-install tsc --noEmit`
 - `node --test tests/*.test.mjs`

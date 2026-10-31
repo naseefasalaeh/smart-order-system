@@ -2,6 +2,7 @@
 
 import { useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import OptionalMembership from "@/components/optional-membership";
 
 type MenuOption = {
   id: number;
@@ -442,6 +443,7 @@ export default function MenuClient({
 
   return (
     <>
+      <OptionalMembership />
       {successMessage && (
         <div className="mt-6 rounded-2xl border border-green-200 bg-green-50 p-4 text-sm font-semibold text-green-700">
           {successMessage}

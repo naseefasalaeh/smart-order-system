@@ -23,7 +23,7 @@ export async function checkSidebarNavigation({ page, context, mock, results, dir
       await page.waitForURL(`**${target}`);
       await active('รอชำระเงิน');
       assert.equal(await nav.getByRole('link', { name: 'ออเดอร์', exact: true }).getAttribute('aria-current'), null);
-      await page.getByRole('button', { name: 'รับชำระเงิน', exact: true }).waitFor();
+      await page.getByRole('button', { name: 'รับเงินสดแล้ว', exact: true }).waitFor();
       await page.screenshot({ path: `${dir}/served-${role}-${width}.png`, fullPage: true });
       await nav.getByRole('link', { name: 'ออเดอร์', exact: true }).click();
       await page.waitForURL('**/dashboard/orders');

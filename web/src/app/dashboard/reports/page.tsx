@@ -51,6 +51,7 @@ export default async function ReportsPage({ searchParams }: { searchParams: Prom
         order_number,
         total_amount,
         created_at,
+        updated_at,
         order_items (
           id,
           quantity,
@@ -110,6 +111,7 @@ export default async function ReportsPage({ searchParams }: { searchParams: Prom
   ]);
 
   const completedOrders = completedOrdersResult.data ?? [];
+  const memberStats = await supabase.rpc("member_menu_statistics", { p_start: start, p_end: end });
   const payments = paymentsResult.data ?? [];
   const recentOrders = recentOrdersResult.data ?? [];
 
@@ -119,7 +121,7 @@ export default async function ReportsPage({ searchParams }: { searchParams: Prom
     cancelledOrdersResult.error ??
     diningOrdersResult.error ??
     paymentsResult.error ??
-    recentOrdersResult.error;
+    recentOrdersResult.error ?? memberStats.error;
 
   const monthOrderCount = monthOrdersResult.count ?? 0;
   const dineInCount = (diningOrdersResult.data ?? []).filter((order) => order.dining_type === "dine_in").length;
@@ -138,33 +140,10 @@ export default async function ReportsPage({ searchParams }: { searchParams: Prom
     )
   );
 
-  // ใช้การชำระเงินสำเร็จเพียงหนึ่งรายการต่อหนึ่งออเดอร์
-  // payments ถูกเรียงจากใหม่ไปเก่าอยู่แล้ว จึงเก็บรายการล่าสุดไว้
-  const paymentByOrderId = new Map<
-    string,
-    (typeof successfulPayments)[number]
-  >();
-
-  successfulPayments.forEach((payment) => {
-    if (payment.order_id && !paymentByOrderId.has(payment.order_id)) {
-      paymentByOrderId.set(payment.order_id, payment);
-    }
-  });
-
-  const paidCompletedOrders = completedOrders.filter((order) =>
-    paymentByOrderId.has(order.id)
-  );
-
-  const paidCompletedOrderIds = new Set(
-    paidCompletedOrders.map((order) => order.id)
-  );
-
-  const paidCompletedPayments = Array.from(paymentByOrderId.values()).filter(
-    (payment) =>
-      payment.order_id && paidCompletedOrderIds.has(payment.order_id)
-  );
-
-  const completedOrderCount = paidCompletedOrders.length;
+  // Count every receipt once, including partial and multi-order receipts.
+  const paidCompletedOrders = completedOrders;
+  const paidCompletedPayments = [...new Map(successfulPayments.map(payment => [payment.id, payment])).values()];
+  const completedOrderCount = completedOrders.length;
 
   const menuSales: Record<
     string,
@@ -213,7 +192,7 @@ export default async function ReportsPage({ searchParams }: { searchParams: Prom
   );
 
   const averageOrderValue =
-    completedOrderCount > 0 ? totalSales / completedOrderCount : 0;
+    completedOrderCount > 0 ? completedOrders.reduce((sum, order) => sum + Number(order.total_amount), 0) / completedOrderCount : 0;
 
   const paymentSummary: Record<
     string,
@@ -252,7 +231,11 @@ export default async function ReportsPage({ searchParams }: { searchParams: Prom
   const dailyByDate = new Map(daily.map((day) => [day.date, day]));
   paidCompletedPayments.forEach((payment) => {
     const day = dailyByDate.get(bangkokDateKey(payment.paid_at ?? payment.created_at));
-    if (day) { day.sales += Number(payment.amount ?? 0); day.orders += 1; }
+    if (day) day.sales += Number(payment.amount ?? 0);
+  });
+  completedOrders.forEach(order => {
+    const day = dailyByDate.get(bangkokDateKey(order.updated_at));
+    if (day) day.orders += 1;
   });
   const cash = paymentMethods.filter((item) => item.method === "cash");
   const qr = paymentMethods.filter((item) => item.method === "qr" || item.method === "qr_code");
@@ -359,6 +342,13 @@ export default async function ReportsPage({ searchParams }: { searchParams: Prom
                     รวมทุกสถานะ
                   </p>
                 </article>
+              </section>
+              <section className="mb-6 overflow-x-auto rounded-2xl bg-white p-6 shadow-sm">
+                <h3 className="text-lg font-bold">เมนูตามกลุ่มลูกค้า (ออเดอร์ในเดือนนี้ ไม่รวมยกเลิก)</h3>
+                <p className="mt-1 text-sm text-zinc-500">แยกลูกค้าทั่วไปออกจากสมาชิกที่ไม่ระบุข้อมูล เบอร์สมาชิกยังไม่ได้ยืนยัน แสดงเฉพาะสถิติรวม</p>
+                <table className="mt-3 w-full text-left text-sm"><thead><tr><th>กลุ่ม</th><th>เพศ</th><th>ช่วงอายุ</th><th>เมนู</th><th>จำนวน</th></tr></thead>
+                  <tbody>{(memberStats.data ?? []).map((row: { customer_group: string; gender: string; age_range: string; menu_name: string; quantity: number }, index: number) => <tr key={index} className="border-t"><td className="py-2">{row.customer_group === "guest" ? "ลูกค้าทั่วไป" : "สมาชิก"}</td><td>{({ female: "หญิง", male: "ชาย", other: "อื่น ๆ", unspecified: "ไม่ระบุ" } as Record<string,string>)[row.gender]}</td><td>{row.age_range === "unspecified" ? "ไม่ระบุ" : row.age_range === "under18" ? "ต่ำกว่า 18" : row.age_range === "55plus" ? "55 ขึ้นไป" : row.age_range}</td><td>{row.menu_name}</td><td>{row.quantity}</td></tr>)}</tbody>
+                </table>
               </section>
               <ReportsCharts days={daily} menus={bestSellingMenus.map((menu) => ({ name: menu.name, quantity: menu.quantity }))}
                 payments={paymentChart} dining={diningChart} />
