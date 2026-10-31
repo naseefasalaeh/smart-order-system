@@ -19,8 +19,11 @@ test('optional members keep existing phone private and require staff approval fo
     await new Function('db','migration','readFileSync',`return (async () => {${setup.slice(setup.indexOf('  await db.exec(readFileSync'),setup.indexOf('  const as='))}})()`)(db,migration,readFileSync);
     for (const name of ['20260923100000_served_order_payment','20261005000000_isolate_operational_roles','20261025000000_kitchen_fcfs_plates','20261025010000_partial_plate_service','20261031000000_item_payments']) await db.exec(migration(name));
     await db.exec(migration('20261031010000_optional_members'));
+    await db.exec(migration('20261101000000_member_recovery_lock_order'));
+    await db.exec(readFileSync('supabase/rollback/20261101000000_member_recovery_lock_order.sql','utf8'));
     await db.exec(readFileSync('supabase/rollback/20261031010000_optional_members.sql','utf8'));
     await db.exec(migration('20261031010000_optional_members'));
+    await db.exec(migration('20261101000000_member_recovery_lock_order'));
     const [menu]=await q("insert into menus(name,price,is_available) values('TEST membership',50,true) returning id");
     await q('insert into menu_ingredients(menu_id,ingredient_id,quantity_required) select $1,id,1 from ingredients order by id limit 1',[menu.id]);
     const enroll=(phone,gender,age,promotions,token)=>q('select enroll_member($1,$2,$3,$4,$5)',[phone,gender,age,promotions,hash(token)]);

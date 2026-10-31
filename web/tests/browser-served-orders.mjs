@@ -111,7 +111,7 @@ try {
   await page.getByText('เสิร์ฟแล้ว กรุณาชำระเงินที่เคาน์เตอร์',{exact:true}).waitFor();
   const results = { checks: [] };
   await other.close();
-  await checkReadySound({ page, mock, emit });
+  await checkReadySound({ page, context, mock, emit });
   await checkPendingPayments({ page, context, mock, emit, dir: '.test-artifacts/served-orders' });
   await checkOrderWorkload({ page, mock, emit, dir: '.test-artifacts/served-orders' });
   await checkPartialPlates({ page, context, mock, emit, dir: '.test-artifacts/served-orders' });

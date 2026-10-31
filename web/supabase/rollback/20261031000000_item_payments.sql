@@ -35,4 +35,9 @@ drop table public.payment_allocations;
 alter table public.payments drop constraint payments_satang_valid;
 alter table public.payments drop column request_id,drop column request_payload,drop column received_by,drop column amount_satang;
 alter table public.payments add constraint payments_order_id_key unique(order_id);
+do $$ begin
+  if to_regclass('supabase_migrations.schema_migrations') is not null then
+    delete from supabase_migrations.schema_migrations where version='20261031000000';
+  end if;
+end $$;
 commit;

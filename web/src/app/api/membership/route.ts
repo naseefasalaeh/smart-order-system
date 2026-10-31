@@ -4,6 +4,18 @@ import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { memberAges, memberCookie, memberGenders, normalizePhone } from "@/lib/member-input";
 
+export async function DELETE(request: Request) {
+  if (request.headers.get("origin") !== new URL(request.url).origin) return NextResponse.json({ error: "คำขอไม่ถูกต้อง" }, { status: 403 });
+  const token = (await cookies()).get(memberCookie)?.value;
+  if (token && /^[a-f0-9]{64}$/.test(token)) {
+    const { error } = await createAdminClient().rpc("revoke_member_device", { p_hash: createHash("sha256").update(token).digest("hex") });
+    if (error) return NextResponse.json({ error: "ยกเลิกการผูกไม่สำเร็จ กรุณาลองใหม่" }, { status: 503 });
+  }
+  const response = NextResponse.json({ message: "ยกเลิกการผูกอุปกรณ์แล้ว ออเดอร์เดิมยังคงเจ้าของเดิม" });
+  response.cookies.delete(memberCookie);
+  return response;
+}
+
 export async function GET() {
   const token = (await cookies()).get(memberCookie)?.value;
   if (!token || !/^[a-f0-9]{64}$/.test(token)) {

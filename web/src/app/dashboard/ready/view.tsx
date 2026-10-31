@@ -30,7 +30,7 @@ export default function OrdersView({ initial, userId, fullName, role }: { initia
             <h2 className="mt-1 text-3xl font-bold">พร้อมเสิร์ฟ</h2>
             <p className="mt-2 text-zinc-600">จานที่ครัวทำเสร็จแล้ว ยืนยันเสิร์ฟทีละจานได้ทันที โดยไม่ต้องรอครบทั้งออเดอร์</p>
           </header>
-          <ReadyPlateAlerts orders={orders ?? []} valid={!error} onNew={markNew} />
+          <ReadyPlateAlerts orders={orders ?? []} valid={!error} onNew={markNew} userId={userId} />
 
           {error ? (
             <div role="alert" className="mt-8 rounded-2xl bg-red-50 p-6 text-red-700 shadow-sm">โหลดออเดอร์ไม่สำเร็จ กรุณาลองใหม่<OrderViewRetry refresh={refresh} /></div>

@@ -19,7 +19,8 @@ create table public.member_devices (
   created_at timestamptz not null default now(),
   reviewed_by uuid references public.profiles(id),
   reviewed_at timestamptz,
-  review_note text
+  review_note text,
+  revoked_at timestamptz
 );
 alter table public.orders add column member_id uuid references public.members(id);
 create index orders_member_idx on public.orders(member_id) where member_id is not null;
@@ -47,15 +48,32 @@ grant execute on function public.enroll_member(text,text,text,boolean,text) to s
 
 create function public.review_member_device(p_hash text,p_note text)
 returns void language plpgsql security definer set search_path='' as $$
+declare v_member uuid;
 begin
   if coalesce(public.current_shop_role(),'')<>'staff' then raise exception using errcode='42501',message='STAFF_ROLE_REQUIRED'; end if;
   if length(btrim(coalesce(p_note,'')))<10 or length(p_note)>1000 then raise exception 'VERIFICATION_NOTE_REQUIRED'; end if;
+  select member_id into v_member from public.member_devices where token_hash=p_hash;
+  perform 1 from public.members where id=v_member for update;
   update public.member_devices set active=true,reviewed_by=auth.uid(),reviewed_at=now(),review_note=p_note
-    where token_hash=p_hash and not active and expires_at>now();
+    where token_hash=p_hash and not active and revoked_at is null and expires_at>now();
   if not found then raise exception 'REQUEST_NOT_FOUND'; end if;
+  -- Recovery is a handover after an in-person review, never a phone lookup.
+  -- Invalidate lost/previous devices so their old bearer tokens stop working.
+  update public.member_devices set active=false,revoked_at=now(),expires_at=least(expires_at,now())
+    where member_id=v_member and token_hash<>p_hash and revoked_at is null;
 end $$;
 revoke all on function public.review_member_device(text,text) from public,anon;
 grant execute on function public.review_member_device(text,text) to authenticated;
+
+create function public.revoke_member_device(p_hash text)
+returns void language plpgsql security definer set search_path='' as $$
+begin
+  if coalesce(auth.role(),'')<>'service_role' then raise exception 'SERVICE_ROLE_REQUIRED'; end if;
+  update public.member_devices set active=false,revoked_at=now(),expires_at=least(expires_at,now())
+    where token_hash=p_hash and revoked_at is null;
+end $$;
+revoke all on function public.revoke_member_device(text) from public,anon,authenticated;
+grant execute on function public.revoke_member_device(text) to service_role;
 
 create function public.create_member_order(p_table_id bigint,p_session_token uuid,p_order_note text,
   p_total_amount numeric,p_items jsonb,p_required_items jsonb,p_dining_type text,p_request_id uuid,p_request_fingerprint text,p_member_hash text)
@@ -66,7 +84,7 @@ begin
   if coalesce(auth.role(),'')<>'service_role' then raise exception 'SERVICE_ROLE_REQUIRED'; end if;
   if p_request_id is not null then perform pg_advisory_xact_lock(hashtextextended(p_request_id::text,0)); end if;
   select exists(select 1 from public.orders o where o.request_id=p_request_id) into v_exists;
-  select member_id into v_member from public.member_devices where token_hash=p_member_hash and active and expires_at>now();
+  select member_id into v_member from public.member_devices where token_hash=p_member_hash and active and revoked_at is null and expires_at>now() for share;
   select * into v_order from public.create_order_with_stock(p_table_id,p_session_token,p_order_note,p_total_amount,p_items,p_required_items,p_dining_type,p_request_id,p_request_fingerprint);
   if not v_exists and v_member is not null then update public.orders o set member_id=v_member where o.id=v_order.id; end if;
   return query select v_order.id,v_order.order_number,v_order.table_id,v_order.session_id,v_order.status,v_order.total_amount,v_order.stock_deducted;

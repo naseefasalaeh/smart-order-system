@@ -7,7 +7,8 @@
 - ตรวจด้วย `git ls-remote --heads origin feature/remove-option-groups-user-identity` ได้ hash ตรงกันก่อนแก้ source
 - ก่อน commit มีเฉพาะ `docs/project-exam-guide-th.md` ที่ยังไม่ติดตาม ไม่มี staged/tracked diff ตรวจชื่อไฟล์และรูปแบบ private key, GitHub/Supabase secret token, JWT และ URL ฐานข้อมูลที่มีรหัสผ่านในไฟล์ที่จะสำรอง 220 ไฟล์ ไม่พบรูปแบบเหล่านี้ การสแกนนี้ไม่ใช่การรับประกันว่าไม่มีความลับทุกรูปแบบ
 - ไม่รวม `.env*`, `.test-artifacts/`, metadata การ link Supabase หรือ database backup ใน Git
-- งานฟีเจอร์นี้ยังไม่ push และยังไม่ deploy
+- จุดสำรองงานฟีเจอร์ก่อนตรวจต่อ: `22aad15f059c2f47e3504dfe5a34f4b411996e16`
+- งานส่งมอบอนุญาตให้ commit/push บน branch เดิมแล้ว ดู hash ส่งมอบในข้อความสรุปและ `git log` เว็บยังไม่ deploy production
 
 ## พฤติกรรมและไฟล์หลัก
 
@@ -17,7 +18,7 @@
 
 `src/lib/ready-plate-notifications.ts` ใช้คีย์ order/item/plate และจำรายการที่เห็นตลอดอายุหน้าจอ snapshot สำเร็จครั้งแรกเป็น baseline เงียบ จากนั้นตรวจเฉพาะจานใหม่ที่ทำเสร็จรอเสิร์ฟ รวมเสียงในช่วง 600 ms การ polling, Realtime, reconnect, การเสิร์ฟจนรายการหาย และรายการเดิมกลับเข้ามา ไม่ทำให้แจ้งซ้ำ
 
-หน้าพร้อมเสิร์ฟเน้นรายการใหม่ด้วยกรอบและข้อความ แม้ปิดเสียง ไม่มี push notification นอกหน้าที่เปิดอยู่ `OrderRealtimeRefresh` และการรอ Auth/fallback polling เดิมยังทำงานตามเดิม เสียงฟีเจอร์นี้อยู่ในหน้าพร้อมเสิร์ฟ การแจ้งข้อความที่ sidebar เดิมยังอยู่
+หน้าพร้อมเสิร์ฟเน้นรายการใหม่ด้วยกรอบและข้อความ แม้ปิดเสียง ไม่มี push notification นอกหน้าที่เปิดอยู่ `OrderRealtimeRefresh` และการรอ Auth/fallback polling เดิมยังทำงานตามเดิม เสียงฟีเจอร์นี้อยู่ในหน้าพร้อมเสิร์ฟ การแจ้งข้อความที่ sidebar เดิมยังอยู่ หลายแท็บที่เปิดเสียงใน browser/origin/บัญชีเดียวกันใช้ Web Locks และรายการจานที่เคยดังใน localStorage เพื่อให้ดังครั้งเดียวต่อจานในอุปกรณ์นั้น หากไม่มี Web Locks/shared storage จะให้เฉพาะแท็บที่มี focus ส่งเสียง ไม่ประสานเสียงระหว่างคนละอุปกรณ์
 
 ### การชำระเงิน
 
@@ -51,25 +52,76 @@ Migration `20261031010000_optional_members.sql` เพิ่ม:
 
 `/api/membership` รับสมัครโดยสมัครใจจากแผงพับในหน้าเมนู ไม่ขวางขั้นตอนสั่งอาหาร เก็บ token ใน HttpOnly/SameSite=Strict cookie และ Secure ใน production ตรวจ Origin ของคำขอสมัคร แสดงว่าเบอร์ยังไม่ยืนยัน ไม่ส่ง SMS/OTP และไม่คืนเบอร์หรือ demographic ผ่าน API สถานะ
 
-เบอร์ใหม่สร้างสมาชิกและผูกกับ token ของอุปกรณ์ที่สมัคร เบอร์ที่มีอยู่แล้วสร้างคำขออุปกรณ์ inactive โดย **ไม่เปิดเผย/แก้ข้อมูลเดิม และไม่ผูกอัตโนมัติ** พนักงานช่วยที่ `/dashboard/members` ดูเบอร์ปกปิดและรหัสอ้างอิง ต้องตรวจหลักฐานเพิ่มเติมนอกเหนือจากการบอกเบอร์ พร้อมยืนยันและบันทึกวิธีตรวจสอบ หากตรวจไม่ได้ให้ใช้ลูกค้าทั่วไปตามเดิม ไม่มีทางนำเบอร์อย่างเดียวไปดูประวัติ/แก้สมาชิก
+เบอร์ใหม่สร้างสมาชิกและผูกกับ token ของอุปกรณ์ที่สมัคร เบอร์ที่มีอยู่แล้วสร้างคำขออุปกรณ์ inactive โดย **ไม่เปิดเผย/แก้ข้อมูลเดิม และไม่ผูกอัตโนมัติ** พนักงานช่วยที่ `/dashboard/members` ดูเบอร์ปกปิดและรหัสอ้างอิง ต้องตรวจหลักฐานเพิ่มเติมนอกเหนือจากการบอกเบอร์ พร้อมยืนยันและบันทึกวิธีตรวจสอบ หากตรวจไม่ได้ให้ใช้ลูกค้าทั่วไปตามเดิม ไม่มีทางนำเบอร์อย่างเดียวไปดูประวัติ/แก้สมาชิก เมื่ออนุมัติกู้การผูกอุปกรณ์ จะเพิกถอน token ของอุปกรณ์เดิมอื่นใน transaction เดียวกันเพื่อป้องกันเครื่องสูญหาย
+
+ลูกค้ากดยกเลิกการผูกในแผงสมาชิกได้ (`DELETE /api/membership`) ตรวจ Origin และเพิกถอน hash ฝั่งฐานจริงก่อนล้าง cookie ถ้าเพิกถอนไม่สำเร็จจะไม่อ้างว่า logout สำเร็จ token หมดอายุ/ถูกเพิกถอนไม่สามารถผูกออเดอร์ใหม่ และ cookie ใช้ไม่ได้จะถูกล้างเมื่ออ่านสถานะ ออเดอร์เก่าไม่ถูกย้ายเจ้าของ การอ่าน token เพื่อสั่งอาหารใช้ row lock ร่วมกับการเพิกถอน
 
 `create_member_order` เรียก transaction สั่งเดิมและผูก member ภายใน transaction เดียว ตรวจ hash ที่ active/ไม่หมดอายุเท่านั้น cookie ไม่ถูกต้องหรือยังรอตรวจเป็น guest การ retry ออเดอร์เดิมไม่เปลี่ยนเจ้าของ แม้ระหว่างนั้นอุปกรณ์ได้รับอนุมัติ ตารางสมาชิกไม่มี SELECT policy หรือ GRANT ให้ anon/authenticated หน้าพนักงานอ่านผ่าน server หลังตรวจ role staff เท่านั้น Admin ดูสถิติรวมผ่าน `member_menu_statistics` แยก guest/member/ไม่ระบุเพศหรืออายุ ไม่มีเบอร์หรือ token ในผลลัพธ์
 
-## ฐานข้อมูลจริงและข้อจำกัด
+## สถานะฐานจริง: 1 พฤศจิกายน 2026 เวลาไทย
 
-**ยังไม่ได้รัน migration หรือแก้ข้อมูลบนฐานจริง** ไม่มี production reset หรือการขยาย RLS ของตารางเดิม ไม่มี dependency/บริการเสียเงินเพิ่ม
+**Apply migrations ทั้งสามกับ Supabase เดิมแล้ว** ตรวจ linked project ตรงกับ URL ของแอปก่อนทำงาน history เพิ่มจาก 28 เป็น 31 versions ได้แก่ `20261031000000`, `20261031010000` และ `20261101000000` สองรายการแรกทำ schema/history ใน transaction เดียวกัน และรายการแก้ lock เพิ่มเติมทำ definition/history ใน transaction ของตัวเอง มี lock timeout และ reload PostgREST schema ไม่มี reset ฐานจริง ไม่มี dependency/บริการเสียเงินเพิ่ม
 
-ตรวจโครงสร้างจาก migrations, fixture baseline, docs และ artifact metadata audit ที่มีอยู่ (audit เดิมวันที่ 26 ตุลาคม 2026) ไม่อ้างว่าเป็นการ audit schema จริงใหม่ ณ วันทำฟีเจอร์ เครื่องนี้ไม่พบ pg_dump/psql/Docker จึงยังไม่สร้าง full SQL backup ใหม่และยังไม่ทดสอบหลาย connection ของ PostgreSQL จริง PGlite เป็นฐานแยกสำหรับทดสอบ SQL/roles/migration/rollback แต่ serialize งานใน connection เดียว ไม่ใช่หลักฐานพิสูจน์ deadlock/locking ของสอง backend จริง
+ก่อน apply ได้ใช้ native pg_dump/pg_dumpall จาก PostgreSQL 17.11 (portable) สำรอง PostgreSQL 17.6 ของ Supabase ผ่าน login ชั่วคราวของ CLI จากนั้น restore ลง PostgreSQL 17.11 ที่ localhost แยกจากฐานจริง เปรียบเทียบแถวข้อมูลทั้ง 51 ตารางและ sequence 14 ตัวตรงกัน ทดสอบ migration/rollback และ concurrency จริงก่อน apply
 
-ก่อนนำขึ้นฐานจริง ต้องทำดังนี้ในช่วงหยุดรับรายการชั่วคราว:
+หลัง apply ตรวจค่าเดิมของ orders/payments โดยตัดเฉพาะคอลัมน์ใหม่ออกแล้ว hash ตรงเดิม ตารางอื่นตรงเดิม ประวัติ payments เดิมไม่เปลี่ยน ID/ยอด/เวลา และ paid allocations รวมตรง receipt เก่า RLS/grants ของตารางและ views เดิม, triggers, functions ที่ไม่เกี่ยวข้อง และ cron jobs เดิมตรงกัน publication membership/filter ไม่เปลี่ยน แต่ all-columns publication ของ orders มี `member_id` UUID เพิ่มตาม schema จึงไม่อ้างว่ารายการคอลัมน์ publication ไม่เปลี่ยน ไม่มีเบอร์หรือ demographic ใน orders/public customer API
 
-1. อ่าน metadata ล่าสุดเทียบ constraints, grants, RPC, triggers, policies กับ schema ที่ทดสอบ โดยเฉพาะ payment unique/FK และ trigger การปิด session
-2. สำรอง schema/data ที่กู้คืนได้จริงด้วย pg_dump/Supabase CLI รวม orders, order_items, options, payments, dining_sessions, profiles และ functions/policies/triggers เก็บนอก Git และจำกัดสิทธิ์ไฟล์ สคริปต์ `scripts/catalog-backup.mjs` เดิมเป็น PostgREST JSON backup เสริม ไม่ใช่ full SQL backup
-3. Restore backup ในฐาน PostgreSQL แยกที่เข้ากันได้กับ Supabase ทดสอบ migration ทั้งสองตามลำดับ และ rollback ก่อนมีธุรกรรมใหม่ เทียบ ID/ยอด/เวลาประวัติเดิม
-4. ทดสอบสอง authenticated staff connections ชำระ item เดียวพร้อมกัน และรวมชุด orders ที่ทับซ้อนกัน ตรวจว่ามีเพียงจำนวนที่ค้างถูกชำระ และยอด receipts รวมตรง allocations
-5. ทดสอบ Supabase RLS/Realtime จริงทุกบทบาท รวมสมาชิก guest/new/existing/expired/recovery และ public API ก่อนอนุญาต apply/deploy
+เพิ่ม `20261101000000_member_recovery_lock_order.sql` หลังทำซ้ำ deadlock ในฐานแยกได้จริง: ออเดอร์ถือ SHARE ที่ device และกำลังตรวจ member FK ขณะที่ recovery ถือ member FOR UPDATE แล้วรอเพิกถอน device แก้ member lock เป็น FOR NO KEY UPDATE เพื่อยัง serialize recovery แต่เข้ากับ FK KEY SHARE ได้ ทดสอบก่อนแก้พบ deadlock 1 connection หลังแก้ทั้ง 2 connections สำเร็จ พร้อมทดสอบ rollback definition/history และ permissions ไม่เปลี่ยน ก่อน apply ได้สำรองและ restore สถานะล่าสุดอีกชุดที่มี 54 ตารางตรงกัน การตรวจหลัง apply พบเปลี่ยนเฉพาะ definition นี้กับ history เพิ่ม 1 แถว ไม่มีข้อมูล/sequence/สิทธิ์อื่นเปลี่ยน
 
-การตรวจรอบนี้ใช้ local fixtures เท่านั้น ไม่ได้สร้างออเดอร์/สมาชิกทดสอบบน production และยังไม่ได้ยืนยันเสียงบน iOS/Safari หรือทุกอุปกรณ์
+## Logical backup และ restore
+
+โฟลเดอร์ส่วนตัวนอก Git: `D:\Projects\smart-order-system\web\.test-artifacts\ready-members-live` จำกัด NTFS ACL ให้บัญชีที่ใช้ทำงาน, SYSTEM และ Administrators ต้องใช้บัญชี/PowerShell ที่เข้าถึงโฟลเดอร์นี้ได้ เก็บไฟล์นี้ไว้และคัดลอกไปยังที่สำรองที่ผู้ดูแลควบคุมก่อน cleanup workspace
+
+ไฟล์หลัก:
+
+- `related-database.dump`: custom-format logical backup ของ schemas public, auth, catalog_backup, supabase_migrations รวมข้อมูล, functions, triggers, policies, indexes, constraints, ACL/default privileges ที่อยู่ใน scope
+- SHA-256: `15d8407ea671315c7ad352142f6c4e80dd908ed6349bf2d5b93661f0fac4d8d6`
+- `roles-no-passwords.sql`: attributes/memberships ของ roles โดยไม่มีรหัสผ่าน SHA-256 `0f13b77da64f36fd76d559e41e045dbb59473ea5000a3326db3688eaae69ceed`
+- `manifest.json`, `schema-before.private.json`, `data-before.private.json`, `schema-after-apply.private.json`, `applied-verification.json`, `restore-verification.json`, `migration-rehearsal.json`, `postgres-concurrency.json` และ captures รอบสุดท้าย
+- โฟลเดอร์ `TEST-feature-*` มี registry ID ทุก resource ทดสอบ, ผล smoke, fingerprints ก่อน/หลัง cleanup และ log ส่วนตัว ไม่เก็บใน Git
+
+backup ล่าสุดก่อน lock fix อยู่ subfolder `before-lock-fix/` ในโฟลเดอร์เดียวกัน กู้คืนและเทียบแล้ว 54 ตาราง/14 sequences ตรงกัน:
+
+- `related-database.dump` SHA-256 `db60f9667c5299405a5afe10a8b42552cd03995a5c4631746745c83c2576a381`
+- `roles-no-passwords.sql` SHA-256 `34d082b7ad8da486d067490cdb523f459425a067eaecc5648434afce8b63122e`
+- มี manifest และ restore-verification ของตัวเอง ไม่ได้เขียนทับ backup ก่อนเริ่มฟีเจอร์
+
+นี่ **ไม่ใช่ full-instance backup**: ไม่รวม Storage object files, Edge Functions, API/JWT secrets, platform/network settings, extension binaries หรือ role passwords ส่วน publication/cron schedules ที่เกี่ยวข้องมี metadata ใน schema audit เพื่อประกอบการกู้บน Supabase ที่เตรียมไว้ ไม่ได้จำลอง pg_cron service บน Windows
+
+ตรวจ checksum ด้วย `Get-FileHash -Algorithm SHA256` ก่อนกู้ สคริปต์ `scripts/feature-postgres-local.mjs restore` กู้ลงฐาน localhost ใหม่เสมอโดยไม่ reset ฐานที่มีอยู่ ใช้รหัสสุ่มและฟังเฉพาะ 127.0.0.1:55439 การกู้บน standalone ปรับเฉพาะ bootstrap owner และ grantor ของ role memberships ให้เป็นเจ้าของ cluster ในเครื่อง โดยเก็บ membership options และ dump ต้นฉบับไว้ครบ ไม่อ้างว่า grantor ของ cluster roles เหมือน Supabase ทุกตัว
+
+คำสั่งกู้มาตรฐานใน **ฐานเป้าหมายใหม่ที่เตรียม roles/extensions แล้ว**:
+
+```text
+pg_restore --list related-database.dump
+pg_restore --exit-on-error --dbname <NEW_TARGET_DATABASE> related-database.dump
+```
+
+อย่ารัน `--clean`, reset หรือ restore ทับฐานจริงโดยตรง การกู้กลับใช้งานต้องจับคู่เวอร์ชันโค้ดกับ schema และ reconcile ธุรกรรมหลัง backup ก่อน ข้อมูล auth ใน dump เป็นข้อมูลอ่อนไหว และการกู้ database ไม่คืนไฟล์ Storage หรือการตั้งค่า control plane ที่อยู่นอก scope
+
+เครื่องมือในเครื่องอยู่ `.test-artifacts/pg-tools/native/pgsql/bin` แพ็กเกจ PostgreSQL ดาวน์โหลดจาก [EDB binaries](https://www.enterprisedb.com/download-postgresql-binaries) ผ่าน HTTPS; SHA-256 ของ zip `4b8db0930c38f6ef845db919551dedda3b6b845aeb0927b3d79a6e8e9e4537cf` ไม่อ้างว่าไฟล์ executable มี Authenticode signature
+
+จบงานแล้วหยุด PostgreSQL localhost ที่สร้างทดสอบ และลบไฟล์เชื่อมต่อ cloud ชั่วคราว เก็บ native binaries, archive, backup, รหัสของ cluster ทดสอบในโฟลเดอร์ส่วนตัว และหลักฐานไว้ การรันชุด PostgreSQL ซ้ำต้องเริ่ม cluster ทดสอบเดิมก่อน; hosted suite ไม่ต้องเริ่ม cluster นี้ ใช้ native client binaries และ Supabase CLI ที่ login ไว้ (`SUPABASE_CLI_EXE` เปลี่ยนตำแหน่ง CLI ได้)
+
+## PostgreSQL concurrency และ hosted smoke
+
+`tests/postgres-feature-concurrency.mjs` ใช้ psql หลาย processes/backend connections จริงในฐานแยก ตรวจ backend PIDs และพบ wait_event_type=Lock ครอบคลุม:
+
+- RPC ชำระเต็มเดิมยังคืน response รูปแบบเดิม ใช้กับเว็บเวอร์ชันที่ยังใช้งานอยู่ได้
+- แข่งจ่ายจำนวนเดียวกัน, แบ่งคนละหนึ่งจาน และจ่ายรวมชนกับบางรายการ
+- request เดิมซ้ำ, key เดิมแต่ payload ต่างกัน, retry หลัง client timeout ที่เกิดหลัง COMMIT
+- inject failure หลังสร้าง receipt แต่ระหว่าง allocations แล้วไม่มีข้อมูลค้างบางส่วน
+- จำนวนจัดสรรไม่เกินอาหาร, เงิน receipt เท่ากับ allocations, ยอดคงเหลือไม่ติดลบ, completed เฉพาะเสิร์ฟ/จ่ายครบ
+- คนละ session แม้เลขโต๊ะเดียวกันถูกปฏิเสธ
+- สมัครเบอร์เดียวกันพร้อมกันได้ member เดียว อุปกรณ์ที่สองรอตรวจ ไม่แก้ demographic/consent เดิม; staff recovery เพิกถอนอุปกรณ์เก่า และตรวจ self-revocation/role denial
+- rollback ก่อนธุรกรรมใหม่คืนข้อมูล/schema/functions/grants/sequences/history ได้ และ rollback หลังมีประวัติใหม่หยุดที่ guard โดยไม่ลบประวัติเพื่อให้ผ่าน
+- `tests/postgres-member-lock-order.mjs` ทำซ้ำ/แก้ device-member FK deadlock ด้วย 2 connections จริง พร้อมตรวจ rollback และ ACL ของ function
+
+`tests/hosted-feature-smoke.mjs` ใช้ Next dev ที่ localhost:4424 ต่อ Supabase จริงแบบลำดับ ไม่มีการแข่งจ่ายบนฐานจริง สร้างเฉพาะ resources ชื่อ TEST พร้อม registry ใช้ ingredient/menu/table/users/member ของชุดทดสอบ ตรวจ guest/member ผ่าน HTTP จริง, FCFS/เสิร์ฟรายจาน, Auth/Realtime จริง, เงินสดบางจำนวนแล้วรวม QR, receipts 2 ครั้งรวม 11100 สตางค์ตรง allocations, ownership ไม่เปลี่ยน และสถิติ Admin แยก member 2 จาน/guest 1 จาน รวมหมดอายุ/กู้สมาชิก/เพิกถอน/CSRF/ปกปิดข้อมูลและ role permissions
+
+Hosted smoke ผ่านทั้งก่อนและหลัง lock fix แต่ละรอบได้ Realtime events จริง 8 ครั้ง และลบเฉพาะ ID ทดสอบที่ลงทะเบียนไว้แล้ว hash/count ทุกตารางหลัง cleanup ตรงก่อน smoke ไม่ได้ deploy เว็บ แต่ **sequence 8 ตัวเลื่อนและไม่ได้ย้อน**: menus_id_seq, categories_id_seq, ingredients_id_seq, order_items_id_seq, orders_order_number_seq, restaurant_tables_id_seq, order_ingredient_usages_id_seq และ auth.refresh_tokens_id_seq ค่าก่อน/หลังเก็บในผลส่วนตัว ไม่อ้างว่าฐานทั้ง instance/cluster-global catalogs ไม่เปลี่ยน เพราะ CLI ใช้ login role ชั่วคราวและ test login ใช้ Auth จริง
+
+ข้อจำกัดที่เหลือ: เสียงทดสอบกับ Edge/Chromium ไม่ได้ทดสอบอุปกรณ์ iOS/Safari ทุกแบบ ไม่มี SMS/OTP, push ภายนอก, ระบบตรวจธนาคารหรือสลิป และยังไม่ deploy เว็บ production
 
 ## คำสั่งตรวจ
 
@@ -81,9 +133,12 @@ npm run build
 node tests/browser-served-orders.mjs
 node tests/browser-customer-cart.mjs
 node tests/browser-role-isolation.mjs
+node tests/postgres-feature-concurrency.mjs
+node tests/postgres-member-lock-order.mjs verify-fix
+node tests/hosted-feature-smoke.mjs
 ```
 
-Browser suites ใช้ local HTTP/Phoenix fixtures และ Edge headless รันทีละคำสั่งเพราะใช้ port ร่วมกัน ไม่ใช้เป็นหลักฐานการอนุญาตของ Supabase จริง ผลล่าสุดและข้อจำกัดสรุปในข้อความส่งมอบของงาน
+Browser fixture suites ใช้ local HTTP/Phoenix และ Edge headless รันทีละคำสั่งเพราะใช้ port ร่วมกัน ส่วน PostgreSQL และ hosted suites แยกตามคำอธิบายข้างต้น Hosted suite สร้าง/ล้าง TEST บนฐานจริง จึงต้องตรวจ registry/backup/queue ก่อนใช้ ไม่ใช่ชุดที่ควรรันอัตโนมัติทั่วไป
 
 ผลตรวจในเครื่อง:
 
@@ -96,10 +151,18 @@ Browser suites ใช้ local HTTP/Phoenix fixtures และ Edge headless ร
 - browser-role-isolation ผ่าน Admin/Staff/Kitchen รวม `/dashboard/payments` และ `/dashboard/members`
 - ตรวจภาพ `pending-payments-375.png` ใน `.test-artifacts/served-orders/` ด้วย ข้อมูลในภาพเป็น fixture
 
+## วิธีเปิดใช้
+
+ฐาน Supabase พร้อมสำหรับโค้ด branch นี้แล้ว ขั้นตอนที่เหลือคือให้เจ้าของสั่ง deploy เว็บเวอร์ชันนี้ด้วย env เดิม (`NEXT_PUBLIC_SUPABASE_URL`, publishable key และ service-role เฉพาะ server) ไม่มี env หรือบริการเสียเงินใหม่ ไม่ต้อง apply ทั้งสาม migrations ซ้ำ เว็บเวอร์ชันเดิมยังรับจ่ายเต็มผ่าน RPC เดิมได้ แต่ฟีเจอร์บางจาน/สมาชิกจะใช้เมื่อเปิดโค้ดเวอร์ชันใหม่ ไม่ควรสลับกลับเว็บเก่าหลังเริ่มใช้ partial/multi-order receipts โดยไม่ตรวจรายงานและ schema คู่กัน
+
+พนักงานเปิด `/dashboard/ready` กดเปิดเสียงครั้งแรกและทดลองเสียงได้; เปิด `/dashboard/payments` เลือกรอบโต๊ะและจำนวน แล้วกดรับเงินสด/ตรวจรับ QR ตามการรับเงินจริง; ลูกค้าเปิดแผงสมาชิกในหน้าเมนูโดยสมัครใจ; กรณีเบอร์เดิมให้พนักงานตรวจที่ `/dashboard/members` Admin ดูสถิติรวมที่ `/dashboard/reports`
+
 ## ย้อนกลับ
 
 โค้ด: เก็บงานปัจจุบันก่อนเปิด branch ตรวจจุดสำรอง ด้วย `git switch -c restore/pre-features f39e85e2fd88cbd75bf42b0ff9396032c67da802` หากยังมี uncommitted changes ต้องเก็บ patch/ไฟล์ใหม่หรือ commit ในเครื่องก่อน การ switch อย่างเดียวอาจพางานที่ยังไม่ commit ไปด้วย ห้าม force push หรือ reset ฐานจริง
 
-ฐานข้อมูล: อ่านและรันในฐานแยกก่อน ใช้ `supabase/rollback/20261031010000_optional_members.sql` แล้ว `supabase/rollback/20261031000000_item_payments.sql` ตามลำดับย้อน ทั้งสองมี transaction/lock และหยุดเมื่อมีข้อมูลสมาชิกหรือ receipt จากฟีเจอร์ใหม่แล้ว เพื่อไม่ลบประวัติจริง
+ฐานข้อมูล: อ่านและรันในฐานแยกก่อน ย้อนตามลำดับ `supabase/rollback/20261101000000_member_recovery_lock_order.sql` → `20261031010000_optional_members.sql` → `20261031000000_item_payments.sql` สองรายการที่คืนโครงสร้างสมาชิก/การจ่ายมี transaction/lock และหยุดเมื่อมีข้อมูลสมาชิกหรือ receipt ใหม่แล้ว เพื่อไม่ลบประวัติจริง เมื่อ guard ผ่านจึงคืน schema และลบเฉพาะ migration history version ของตัวเองใน transaction เดียวกันให้กลับตรง schema การปรับนี้ไม่ใช่การลบประวัติการชำระเงินเพื่อฝืน guard
+
+rollback ของ lock fix คืน definition รุ่นก่อนที่มี deadlock ดังนั้นใช้เฉพาะช่วง maintenance สำหรับย้อนครบชุด/ฐานแยก ไม่ควรถอน lock fix ตัวเดียวในระบบที่เปิดรับออเดอร์ ให้เลือก forward fix ตามปกติ ทดสอบการย้อนครบทั้งสามแล้วบน PostgreSQL แยก และข้อมูล/schema/RPC/grants/sequences/history เดิมกลับตรงก่อนฟีเจอร์
 
 หากมีธุรกรรมใหม่แล้ว การ downgrade กลับโครงสร้างหนึ่ง payment ต่อ order ทำให้บางส่วน/หลาย order แสดงผิดได้ ห้ามฝืนลบข้อมูลเพื่อผ่าน guard ให้ใช้ forward fix หรือ restore ที่มีแผน reconcile ธุรกรรมหลังจุด backup และตรวจยอดโดยผู้ดูแลก่อน ห้ามนำโค้ดเก่ากลับรับเงินกับ schema ใหม่โดยไม่ตรวจความเข้ากันได้

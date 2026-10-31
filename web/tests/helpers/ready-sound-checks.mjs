@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 
-export async function checkReadySound({ page, mock, emit }) {
+export async function checkReadySound({ page, context, mock, emit }) {
   mock.state.role='staff';
   const item={id:901,quantity:3,completed_plates:[1],served_plates:[],menu_name_snapshot:'เสียงทดสอบ',order_item_options:[]};
   mock.state.catalog.orders=[{id:'00000000-0000-4000-8000-000000000901',order_number:901,status:'preparing',dining_type:'dine_in',created_at:new Date().toISOString(),restaurant_tables:{table_number:'7'},order_items:[item]}];
@@ -30,6 +30,32 @@ export async function checkReadySound({ page, mock, emit }) {
   await page.getByRole('button',{name:'ทดลองเสียง',exact:true}).click();
   await page.waitForFunction(()=>window.testTones===2);
   assert.equal(await page.getByRole('button',{name:'เปิดเสียงแจ้งเตือน',exact:true}).count(),1,'testing does not enable notifications');
+  await page.getByRole('button',{name:'เปิดเสียงแจ้งเตือน',exact:true}).click();
+  const other=await context.newPage();
+  await other.addInitScript(()=>{
+    window.testTones=0;
+    const original=AudioContext.prototype.createOscillator;
+    AudioContext.prototype.createOscillator=function(...args){window.testTones++;return original.apply(this,args);};
+  });
+  await other.goto('http://localhost:4400/dashboard/ready');
+  await other.getByRole('button',{name:'เปิดเสียงแจ้งเตือน',exact:true}).click();
+  const tonesBefore=await page.evaluate(()=>window.testTones)+await other.evaluate(()=>window.testTones);
+  item.quantity=4;item.completed_plates=[1,2,3,4];emit();
+  for(let attempt=0;attempt<80;attempt++) {
+    const tones=await page.evaluate(()=>window.testTones)+await other.evaluate(()=>window.testTones);
+    if(tones>tonesBefore)break;
+    await page.waitForTimeout(100);
+  }
+  await page.evaluate(()=>window.dispatchEvent(new Event('online')));
+  await other.evaluate(()=>window.dispatchEvent(new Event('online')));
+  await page.waitForTimeout(1500);
+  assert.equal(await page.evaluate(()=>window.testTones)+await other.evaluate(()=>window.testTones),tonesBefore+2,'multiple enabled tabs announce a new plate once per device');
+  await other.close();
+  await page.getByRole('button',{name:'ปิดเสียงแจ้งเตือน',exact:true}).click();
+  item.quantity=5;item.completed_plates=[1,2,3,4,5];emit();
+  const muted=await page.evaluate(()=>window.testTones);
+  await page.waitForTimeout(1400);
+  assert.equal(await page.evaluate(()=>window.testTones),muted);
   delete mock.state.catalog.orders;
   console.log('PASS: browser Web Audio activation, remembered preference, baseline silence, batching and reconnect deduplication');
 }

@@ -41,6 +41,10 @@ export async function startMock(port = 4401) {
         const device=state.catalog.member_devices?.find(d=>d.token_hash===body.p_hash);
         if(device) device.active=true;
       }
+      if (path.endsWith('/revoke_member_device')) {
+        const device=state.catalog.member_devices?.find(d=>d.token_hash===body.p_hash);
+        if(device) { device.active=false; device.revoked_at=state.updatedAt; }
+      }
       if (path.endsWith('/save_ingredient')) {
         const ingredients = state.catalog.ingredients ??= [ingredient];
         let saved = ingredients.find(item => item.id === body.p_id);

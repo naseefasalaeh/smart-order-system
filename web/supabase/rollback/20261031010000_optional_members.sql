@@ -9,8 +9,14 @@ end $$;
 drop function public.create_member_order(bigint,uuid,text,numeric,jsonb,jsonb,text,uuid,text,text);
 drop function public.member_menu_statistics(timestamptz,timestamptz);
 drop function public.review_member_device(text,text);
+drop function public.revoke_member_device(text);
 drop function public.enroll_member(text,text,text,boolean,text);
 alter table public.orders drop column member_id;
 drop table public.member_devices;
 drop table public.members;
+do $$ begin
+  if to_regclass('supabase_migrations.schema_migrations') is not null then
+    delete from supabase_migrations.schema_migrations where version='20261031010000';
+  end if;
+end $$;
 commit;

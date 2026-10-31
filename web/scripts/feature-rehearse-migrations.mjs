@@ -1,0 +1,31 @@
+import fs from 'node:fs';
+import path from 'node:path';
+import assert from 'node:assert/strict';
+import { sql,native,state,privateRoot } from './feature-postgres-local.mjs';
+const database=state().database;
+const files=['20261031000000_item_payments','20261031010000_optional_members','20261101000000_member_recovery_lock_order'];
+async function apply(name) {
+  await native('psql',['-X','-q','-v','ON_ERROR_STOP=1','-d',database,'-f',`supabase/migrations/${name}.sql`]);
+  await sql(database,`insert into supabase_migrations.schema_migrations(version,name,statements) values('${name.slice(0,14)}','${name.slice(15)}',array['local rehearsal']::text[])`);
+}
+const fingerprint=()=>native('psql',['-X','-qAt','-v','ON_ERROR_STOP=1','-d',database,'-f','supabase/feature-data-fingerprint.sql']).then(r=>JSON.parse(r.stdout));
+const before=await fingerprint();
+const schemaQuery=fs.readFileSync('supabase/feature-schema-audit.sql','utf8').replace(/'cron_jobs',\(select[^\n]+/,'\'cron_jobs\',null');
+const schemaBefore=JSON.parse(await sql(database,schemaQuery));
+fs.writeFileSync(path.join(privateRoot,'local-schema-before.private.json'),JSON.stringify(schemaBefore,null,2));
+for(const name of files) await apply(name);
+const mismatch=await sql(database,`select count(*) from payments p where p.status='paid' and p.amount_satang<>(select coalesce(sum(a.amount_satang),0) from payment_allocations a where a.payment_id=p.id)`);
+assert.equal(mismatch,'0','Historical paid receipt totals must match allocations');
+const schemaAfter=JSON.parse(await sql(database,schemaQuery));
+assert.deepEqual(schemaAfter.policies.filter(p=>schemaBefore.policies.some(b=>b.tablename===p.tablename)),schemaBefore.policies,'Existing RLS policies changed');
+assert.deepEqual(schemaAfter.triggers,schemaBefore.triggers,'Existing cooking/session triggers changed');
+for(const name of [...files].reverse()) await native('psql',['-X','-q','-v','ON_ERROR_STOP=1','-d',database,'-f',`supabase/rollback/${name}.sql`]);
+assert.deepEqual(await fingerprint(),before,'Rollback changed existing data or sequences');
+const schemaRestored=JSON.parse(await sql(database,schemaQuery));
+for(const key of ['columns','constraints','policies','grants','triggers','rls','indexes']) assert.deepEqual(schemaRestored[key],schemaBefore[key],`Rollback changed ${key}`);
+const normalize=source=>source.replace(/\s+/g,' ').trim();
+assert.deepEqual(schemaRestored.functions.map(f=>({...f,definition:normalize(f.definition)})),schemaBefore.functions.map(f=>({...f,definition:normalize(f.definition)})),'Rollback changed RPC definitions/permissions');
+for(const name of files) await apply(name);
+const result={at:new Date().toISOString(),database,migrations:files,legacyAllocationTotals:true,existingPoliciesAndTriggersPreserved:true,rollbackDataAndSequences:true,rollbackSchemaAndFunctions:true,reappliedForConcurrency:true};
+fs.writeFileSync(path.join(privateRoot,'migration-rehearsal.json'),JSON.stringify(result,null,2));
+console.log(JSON.stringify(result));

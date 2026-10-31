@@ -20,7 +20,7 @@ export default async function MembersPage() {
   return <main className="min-h-screen bg-orange-50 p-6 text-zinc-900"><div className="mx-auto max-w-3xl">
     <Link href="/dashboard/payments" className="underline">กลับหน้าชำระเงิน</Link>
     <h1 className="mt-4 text-2xl font-bold">ช่วยผูกอุปกรณ์สมาชิกเดิม</h1>
-    <p className="mt-3">ตรวจรหัสอ้างอิงจากหน้าจอลูกค้าและหลักฐานการใช้งานเดิมตามขั้นตอนร้าน การบอกเบอร์โทรเพียงอย่างเดียวไม่เพียงพอ หากตรวจสอบไม่ได้ ห้ามอนุมัติ ให้สั่งแบบลูกค้าทั่วไปได้ตามปกติ การอนุมัตินี้ไม่ได้ยืนยันเจ้าของเบอร์โทร</p>
+    <p className="mt-3">ตรวจรหัสอ้างอิงจากหน้าจอลูกค้าและหลักฐานการใช้งานเดิมตามขั้นตอนร้าน การบอกเบอร์โทรเพียงอย่างเดียวไม่เพียงพอ หากตรวจสอบไม่ได้ ห้ามอนุมัติ ให้สั่งแบบลูกค้าทั่วไปได้ตามปกติ เมื่ออนุมัติจะยกเลิก token ของอุปกรณ์เดิมอื่นเพื่อป้องกันเครื่องสูญหาย การอนุมัตินี้ไม่ได้ยืนยันเจ้าของเบอร์โทร</p>
     {error && <p role="alert">โหลดคำขอไม่สำเร็จ กรุณาลองใหม่</p>}
     {(data ?? []).map(device => {
       const member = Array.isArray(device.members) ? device.members[0] : device.members;

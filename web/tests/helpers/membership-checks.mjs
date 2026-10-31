@@ -7,6 +7,8 @@ export async function checkMembership({page,context,mock}) {
   await page.locator('input[type=password]').fill('local-test-password');
   await page.locator('button[type=submit]').click();
   await page.waitForURL('**/dashboard');
+  const crossOrigin=await context.request.post('http://localhost:4400/api/membership',{headers:{Origin:'https://attacker.invalid'},data:{phone:'0812345678',accept:true,promotions:false}});
+  assert.equal(crossOrigin.status(),403);
   for (const existing of [false,true]) {
     await context.clearCookies({name:'smart-order-member'});
     delete mock.state.catalog.member_devices;
@@ -28,6 +30,8 @@ export async function checkMembership({page,context,mock}) {
     assert.equal(state.state,existing?'pending':'member');
     assert.equal(state.phoneVerified,false);
     assert.ok(!JSON.stringify(state).includes('812345678'));
+    const rejectedRevocation=await context.request.delete('http://localhost:4400/api/membership',{headers:{Origin:'https://attacker.invalid'}});
+    assert.equal(rejectedRevocation.status(),403);
     if(existing) {
       mock.state.role='kitchen_staff';
       const privateReads=mock.state.requests.filter(r=>r.path.endsWith('/member_devices')).length;
@@ -43,6 +47,12 @@ export async function checkMembership({page,context,mock}) {
       await page.getByRole('button',{name:'อนุมัติผูกอุปกรณ์นี้',exact:true}).click();
       await page.waitForFunction(async()=> (await(await fetch('/api/membership')).json()).state==='member');
     }
+    await page.goto('http://localhost:4400/table/id-1');
+    await page.locator('summary').filter({hasText:'สมาชิกสมัครใจ'}).click();
+    await page.getByRole('button',{name:'ยกเลิกการผูกสมาชิกในอุปกรณ์นี้',exact:true}).click();
+    await page.getByRole('button',{name:'สมัครสมาชิกโดยสมัครใจ',exact:true}).waitFor();
+    assert.ok(!(await context.cookies()).some(cookie=>cookie.name==='smart-order-member'));
+    assert.equal(mock.state.catalog.member_devices[0].active,false);
   }
   await context.clearCookies({name:'smart-order-member'});
   delete mock.state.catalog.member_devices;
