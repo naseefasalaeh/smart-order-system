@@ -4,6 +4,7 @@ import PlateProgress from "@/components/plate-progress";
 import PaymentProgress from "@/components/payment-progress";
 import { paidItemQuantity, type PaymentAllocation } from "@/lib/payment-progress";
 import { orderDisplayStatus } from "@/lib/plate-progress";
+import { formatOrderNumber } from "@/lib/order-number";
 import Link from "next/link";
 import { useCustomerOrderEvents } from "@/components/customer-order-events";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -293,7 +294,7 @@ export default function CustomerOrdersClient({ tableId, tableNumber, legacyRefer
               <article key={order.id} className="rounded-2xl bg-white p-6 shadow-sm">
                 <div className="flex items-start justify-between gap-4">
                   <div>
-                    <p className="font-bold">ออเดอร์ {order.order_number ?? order.id}</p><p className="text-sm text-orange-700">{order.dining_type === "takeaway" ? "กลับบ้าน (Takeaway)" : "ทานที่ร้าน"}</p>
+                    <p className="font-bold">ออเดอร์ {formatOrderNumber(order.order_number) !== "-" ? formatOrderNumber(order.order_number) : (order.order_number ?? order.id)}</p><p className="text-sm text-orange-700">{order.dining_type === "takeaway" ? "กลับบ้าน (Takeaway)" : "ทานที่ร้าน"}</p>
                     <p className="mt-1 text-xs text-zinc-500">
                       {new Date(order.created_at).toLocaleString("th-TH", { timeZone: "Asia/Bangkok" })}
                     </p>

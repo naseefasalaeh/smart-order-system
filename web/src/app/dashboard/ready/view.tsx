@@ -9,6 +9,7 @@ import OrderRealtimeRefresh from "@/components/order-realtime-refresh";
 import { OrderViewRefresh, OrderViewRetry, useLiveOrderView } from "@/components/live-order-view";
 import type { ShopRole } from "@/lib/dashboard-auth";
 import { loadReadyOrders } from "@/lib/order-views";
+import { formatOrderNumber } from "@/lib/order-number";
 const allowed: ShopRole[] = ["staff"];
 export default function OrdersView({ initial, userId, fullName, role }: { initial: Awaited<ReturnType<typeof loadReadyOrders>>; userId: string; fullName: string; role: ShopRole;  }) {
   const load = loadReadyOrders;
@@ -46,7 +47,7 @@ export default function OrdersView({ initial, userId, fullName, role }: { initia
                   <article key={order.id} className="min-w-0 rounded-2xl bg-white p-6 shadow-sm">
                     <div className="flex flex-wrap items-start justify-between gap-3 border-b border-zinc-100 pb-4">
                       <div>
-                        <p className="text-sm font-semibold text-orange-600">ออเดอร์ #{order.order_number}</p>
+                        <p className="text-sm font-semibold text-orange-600">ออเดอร์ {formatOrderNumber(order.order_number)}</p>
                         <h3 className="mt-1 text-xl font-bold">{order.dining_type === "takeaway" ? "กลับบ้าน" : `โต๊ะ ${table?.table_number ?? "-"}`}</h3>
                       </div>
                       <span className="rounded-full bg-green-100 px-3 py-1 text-sm font-semibold text-green-800">{orderDisplayStatus(order) === "partially_served" ? "เสิร์ฟแล้วบางส่วน" : "พร้อมเสิร์ฟ"}</span>

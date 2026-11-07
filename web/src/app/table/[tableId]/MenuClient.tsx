@@ -3,6 +3,7 @@
 import { useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import OptionalMembership from "@/components/optional-membership";
+import { formatOrderNumber } from "@/lib/order-number";
 
 type MenuOption = {
   id: number;
@@ -413,7 +414,7 @@ export default function MenuClient({
       }
 
       const orderNumber =
-        result.order?.order_number ??
+        (result.order?.order_number !== undefined && result.order?.order_number !== null ? formatOrderNumber(result.order.order_number) : undefined) ??
         result.order?.id ??
         "";
 

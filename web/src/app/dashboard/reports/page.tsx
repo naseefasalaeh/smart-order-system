@@ -4,15 +4,6 @@ import ReportsCharts from "@/components/reports-charts";
 import { bangkokCurrentMonth, bangkokMonthRange } from "@/lib/bangkok-date";
 import { requireDashboardContext } from "@/lib/dashboard-auth";
 
-const statusLabels: Record<string, string> = {
-  confirmed: "รอเริ่มทำ",
-  preparing: "กำลังทำ",
-  ready: "พร้อมเสิร์ฟ",
-  served: "เสิร์ฟแล้ว รอชำระเงิน",
-  completed: "เสร็จสิ้น",
-  cancelled: "ยกเลิก",
-};
-
 const paymentMethodLabels: Record<string, string> = {
   cash: "เงินสด",
   qr: "QR Code",
@@ -42,7 +33,6 @@ export default async function ReportsPage({ searchParams }: { searchParams: Prom
     cancelledOrdersResult,
     diningOrdersResult,
     paymentsResult,
-    recentOrdersResult,
   ] = await Promise.all([
     supabase
       .from("orders")
@@ -91,37 +81,18 @@ export default async function ReportsPage({ searchParams }: { searchParams: Prom
       .gte("paid_at", start)
       .lt("paid_at", end)
       .order("created_at", { ascending: false }),
-
-    supabase
-      .from("orders")
-      .select(`
-        id,
-        order_number,
-        status,
-        total_amount,
-        created_at,
-        restaurant_tables (
-          table_number
-        )
-      `)
-      .gte("created_at", start)
-      .lt("created_at", end)
-      .order("created_at", { ascending: false })
-      .limit(5),
   ]);
 
   const completedOrders = completedOrdersResult.data ?? [];
   const memberStats = await supabase.rpc("member_menu_statistics", { p_start: start, p_end: end });
   const payments = paymentsResult.data ?? [];
-  const recentOrders = recentOrdersResult.data ?? [];
 
   const pageError =
     completedOrdersResult.error ??
     monthOrdersResult.error ??
     cancelledOrdersResult.error ??
     diningOrdersResult.error ??
-    paymentsResult.error ??
-    recentOrdersResult.error ?? memberStats.error;
+    paymentsResult.error ?? memberStats.error;
 
   const monthOrderCount = monthOrdersResult.count ?? 0;
   const dineInCount = (diningOrdersResult.data ?? []).filter((order) => order.dining_type === "dine_in").length;
@@ -461,94 +432,7 @@ export default async function ReportsPage({ searchParams }: { searchParams: Prom
                 </article>
               </section>
 
-              <section className="mt-6 rounded-2xl bg-white p-6 shadow-sm">
-                <div className="flex flex-wrap items-center justify-between gap-4">
-                  <div>
-                    <p className="text-sm font-semibold text-orange-500">
-                      รายการล่าสุด
-                    </p>
-
-                    <h3 className="mt-1 text-xl font-bold text-zinc-900">
-                      ออเดอร์ล่าสุด
-                    </h3>
-                  </div>
-
-                  <Link
-                    href="/dashboard/orders"
-                    className="rounded-xl bg-orange-100 px-4 py-2 text-sm font-semibold text-orange-700 transition hover:bg-orange-200"
-                  >
-                    ดูออเดอร์ทั้งหมด
-                  </Link>
-                </div>
-
-                {recentOrders.length === 0 ? (
-                  <div className="mt-6 rounded-xl border border-dashed border-zinc-300 px-6 py-12 text-center">
-                    <p className="text-zinc-500">
-                      ยังไม่มีออเดอร์ในระบบ
-                    </p>
-                  </div>
-                ) : (
-                  <div className="mt-6 overflow-x-auto">
-                    <table className="w-full min-w-[650px] text-left">
-                      <thead>
-                        <tr className="border-b border-zinc-200 text-sm text-zinc-500">
-                          <th className="pb-3 font-medium">ออเดอร์</th>
-                          <th className="pb-3 font-medium">โต๊ะ</th>
-                          <th className="pb-3 font-medium">วันที่และเวลา</th>
-                          <th className="pb-3 font-medium">สถานะ</th>
-                          <th className="pb-3 text-right font-medium">
-                            ยอดรวม
-                          </th>
-                        </tr>
-                      </thead>
-
-                      <tbody>
-                        {recentOrders.map((order) => {
-                          const table = Array.isArray(order.restaurant_tables)
-                            ? order.restaurant_tables[0]
-                            : order.restaurant_tables;
-
-                          return (
-                            <tr
-                              key={order.id}
-                              className="border-b border-zinc-100 last:border-0"
-                            >
-                              <td className="py-4 font-semibold text-zinc-800">
-                                #{order.order_number}
-                              </td>
-
-                              <td className="py-4 text-zinc-600">
-                                โต๊ะ {table?.table_number ?? "-"}
-                              </td>
-
-                              <td className="py-4 text-sm text-zinc-500">
-                                {new Date(order.created_at).toLocaleString(
-                                  "th-TH",
-                                  {
-                                    timeZone: "Asia/Bangkok",
-                                  }
-                                )}
-                              </td>
-
-                              <td className="py-4">
-                                <span className="rounded-full bg-zinc-100 px-3 py-1 text-sm font-medium text-zinc-700">
-                                  {statusLabels[order.status] ?? order.status}
-                                </span>
-                              </td>
-
-                              <td className="py-4 text-right font-bold text-zinc-800">
-                                ฿{formatCurrency(
-                                  Number(order.total_amount ?? 0)
-                                )}
-                              </td>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
-              </section>
+              
             </>
           )}
         </div>

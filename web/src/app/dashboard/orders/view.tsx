@@ -15,6 +15,7 @@ import OrderStatusTabs from "@/components/order-status-tabs";
 import { useCallback } from "react";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { loadOrders } from "@/lib/order-views";
+import { formatOrderNumber } from "@/lib/order-number";
 const statusLabels: Record<string, string> = {
   partially_served: "เสิร์ฟแล้วบางส่วน",
   confirmed: "รอเริ่มทำ",
@@ -119,7 +120,7 @@ export default function OrdersView({ initial, userId, fullName, role, status, da
                     <div className="flex flex-wrap items-start justify-between gap-4 border-b border-zinc-100 p-6">
                       <div>
                         <p className="text-sm text-zinc-500">
-                          ออเดอร์ #{order.order_number}
+                          ออเดอร์ {formatOrderNumber(order.order_number)}
                         </p>
 
                         <h3 className="mt-1 text-xl font-bold text-zinc-900">

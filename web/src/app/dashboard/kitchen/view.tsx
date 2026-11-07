@@ -8,6 +8,7 @@ import { OrderViewRefresh, OrderViewRetry, useLiveOrderView } from "@/components
 import type { ShopRole } from "@/lib/dashboard-auth";
 import UpdateOrderStatusButton from "@/components/update-order-status-button";
 import { loadKitchenOrders } from "@/lib/order-views";
+import { formatOrderNumber } from "@/lib/order-number";
 const statusLabels: Record<string, string> = {
   confirmed: "รอเริ่มทำ",
   preparing: "กำลังทำ",
@@ -83,7 +84,7 @@ export default function OrdersView({ initial, userId, fullName, role }: { initia
                     <div className="flex items-start justify-between gap-4">
                       <div>
                         <p className="text-sm text-zinc-500">
-                          ออเดอร์ #{order.order_number}
+                          ออเดอร์ {formatOrderNumber(order.order_number)}
                         </p>
 
                         <h3 className="mt-1 text-2xl font-bold text-zinc-900">

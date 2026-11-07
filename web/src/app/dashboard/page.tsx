@@ -2,6 +2,7 @@ import { orderDisplayStatus } from "@/lib/plate-progress";
 import Link from "next/link";
 import DashboardSidebar from "@/components/dashboard-sidebar";
 import { requireDashboardContext } from "@/lib/dashboard-auth";
+import { formatOrderCode } from "@/lib/order-number";
 
 const paidStatuses = ["paid", "completed", "success", "successful"];
 
@@ -245,7 +246,7 @@ export default async function DashboardPage() {
                           className="border-b border-zinc-100 last:border-0"
                         >
                           <td className="px-3 py-4 font-semibold text-zinc-900">
-                            #{order.order_number}
+                            {formatOrderCode(order.order_number, order.created_at)}
                           </td>
                           <td className="px-3 py-4 text-zinc-700">
                             โต๊ะ {table?.table_number ?? "-"}

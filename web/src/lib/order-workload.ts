@@ -1,5 +1,6 @@
 import { pendingPlates, orderDisplayStatus } from "@/lib/plate-progress";
 import { filterUnpaidOrders } from "@/lib/unpaid-orders";
+import { formatOrderNumber } from "@/lib/order-number";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 export async function loadOrderWorkload(db: SupabaseClient, role: "staff" | "kitchen_staff" = "staff") {
@@ -23,7 +24,7 @@ export async function loadOrderWorkload(db: SupabaseClient, role: "staff" | "kit
       const table = Array.isArray(order.restaurant_tables) ? order.restaurant_tables[0] : order.restaurant_tables;
       return (order.order_items ?? []).flatMap(item => {
         const menu = Array.isArray(item.menus) ? item.menus[0] : item.menus;
-        const place = order.dining_type === "takeaway" ? `ออเดอร์กลับบ้าน #${order.order_number}` : `โต๊ะ ${table?.table_number ?? "-"}`;
+        const place = order.dining_type === "takeaway" ? `ออเดอร์กลับบ้าน ${formatOrderNumber(order.order_number)}` : `โต๊ะ ${table?.table_number ?? "-"}`;
         const label = `${place} · ${item.menu_name_snapshot ?? menu?.name ?? "อาหาร"}`;
         return pendingPlates(item).map(plate => ({ id: `${item.id}:${plate}`, group: String(item.id), label }));
       });

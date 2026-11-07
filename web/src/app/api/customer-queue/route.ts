@@ -1,4 +1,5 @@
 import { orderDisplayStatus } from "@/lib/plate-progress";
+import { formatOrderNumber } from "@/lib/order-number";
 import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 
@@ -72,13 +73,9 @@ export async function POST(request: Request) {
         return [];
       }
 
-      const rawQueueNumber = String(order.order_number);
-
       return [
         {
-          queueNumber: rawQueueNumber.startsWith("#")
-            ? rawQueueNumber
-            : `#${rawQueueNumber}`,
+          queueNumber: formatOrderNumber(order.order_number),
           status: String(order.status),
           partiallyServed: orderDisplayStatus(order) === "partially_served",
           created_at: String(order.created_at),

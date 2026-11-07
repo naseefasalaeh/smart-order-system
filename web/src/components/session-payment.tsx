@@ -5,6 +5,7 @@ import { createClient } from "@/lib/supabase/client";
 import type { loadPendingPayments } from "@/lib/order-views";
 import { paidItemQuantity as paidQuantity } from "@/lib/payment-progress";
 import PaymentHistory from "@/components/payment-history";
+import { formatOrderNumber } from "@/lib/order-number";
 
 type Order = Awaited<ReturnType<typeof loadPendingPayments>>["orders"][number];
 const money = (satang: number) => (satang / 100).toLocaleString("th-TH", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -90,11 +91,11 @@ export default function SessionPayment({ orders, refresh }: { orders: Order[]; r
 
   return <section className="mt-5 rounded-2xl bg-white p-6 shadow-sm">
     <p className="font-bold text-orange-700">{orders[0].dining_type === "takeaway" ? "กลับบ้าน" : `โต๊ะ ${table?.table_number ?? "-"}`} · รอบ {orders[0].session_id?.slice(0, 8) ?? "ออเดอร์เดี่ยว"}</p>
-    <h3 className="text-lg font-bold">{orders[0].session_id ? "ชำระในรอบการใช้โต๊ะเดียวกัน" : "ชำระออเดอร์นี้"} · ออเดอร์ {orders.map(o => `#${o.order_number}`).join(", ")}</h3>
+    <h3 className="text-lg font-bold">{orders[0].session_id ? "ชำระในรอบการใช้โต๊ะเดียวกัน" : "ชำระออเดอร์นี้"} · ออเดอร์ {orders.map(o => formatOrderNumber(o.order_number)).join(", ")}</h3>
     <p className="mt-1 text-sm text-zinc-600">รับชำระรายการที่เสิร์ฟครบแล้ว ราคาต่อจานรวมตัวเลือกและของเพิ่มจากตอนสั่ง</p>
     <button type="button" disabled={pending || restoring || uncertain} className="mt-3 underline" onClick={() => setSelected(Object.fromEntries(lines.map(line => [line.item.id, line.remaining])))}>เลือกทั้งหมดที่ค้างในรอบนี้</button>
     <ul className="mt-3 space-y-3">{lines.map(({ order, item, remaining }) => <li key={item.id} className="flex flex-wrap items-center justify-between gap-2 border-b pb-3">
-      <div><p className="font-semibold">#{order.order_number} {item.menu_name_snapshot ?? "อาหาร"}</p>
+      <div><p className="font-semibold">{formatOrderNumber(order.order_number)} {item.menu_name_snapshot ?? "อาหาร"}</p>
         <p className="text-sm text-zinc-600">จ่ายแล้ว {paidQuantity(item)} / {item.quantity} · ค้าง {remaining} · ฿{money(Math.round(Number(item.unit_price) * 100))} ต่อจาน</p>
         {item.order_item_options.map(option => <p key={option.id} className="text-xs text-orange-700">{option.option_name} × {option.quantity} ต่อจาน</p>)}
       </div>
