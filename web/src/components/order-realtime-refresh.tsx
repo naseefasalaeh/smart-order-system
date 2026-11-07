@@ -155,14 +155,14 @@ export default function OrderRealtimeRefresh({
             startFallbackPolling();
 
             if (error) {
-              console.error("Order Realtime subscription failed:", error);
+              console.warn("Order Realtime subscription closed:", error?.message ?? error);
             }
           }
         });
       } catch (error) {
         if (!isActive) return;
         startFallbackPolling();
-        console.error("Order Realtime authentication failed:", error);
+        console.warn("Order Realtime authentication failed:", error);
       }
     };
     void subscribe();
