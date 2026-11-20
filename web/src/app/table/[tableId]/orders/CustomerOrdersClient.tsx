@@ -2,45 +2,16 @@
 
 import PlateProgress from "@/components/plate-progress";
 import PaymentProgress from "@/components/payment-progress";
-import { paidItemQuantity, type PaymentAllocation } from "@/lib/payment-progress";
+import { paidItemQuantity } from "@/lib/payment-progress";
 import { orderDisplayStatus } from "@/lib/plate-progress";
 import { formatOrderNumber } from "@/lib/order-number";
 import Link from "next/link";
 import { useCustomerOrderEvents } from "@/components/customer-order-events";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { CustomerMenu } from "@/lib/customer-menu-catalog";
+import EditOrderModal, { type OrderData } from "./EditOrderModal";
 
-type OrderOption = {
-  id: number;
-  option_name: string;
-  additional_price: number;
-  quantity: number;
-};
-
-type OrderItem = {
-  payment_allocations?: PaymentAllocation[];
-  menu_name_snapshot: string;
-  menu_price_snapshot: number;
-  id: number;
-  quantity: number;
-  completed_plates: number[];
-  served_plates: number[];
-  unit_price: number;
-  subtotal: number;
-  note: string | null;
-  menus: { name: string } | null;
-  order_item_options: OrderOption[];
-};
-
-type Order = {
-  dining_type: "dine_in" | "takeaway";
-  id: string;
-  order_number: string | null;
-  status: string;
-  total_amount: number;
-  note: string | null;
-  created_at: string;
-  order_items: OrderItem[];
-};
+type Order = OrderData;
 
 const statusLabels: Record<string, string> = {
   partially_served: "เสิร์ฟแล้วบางส่วน",
@@ -56,12 +27,34 @@ function formatPrice(value: number) {
   return new Intl.NumberFormat("th-TH", { maximumFractionDigits: 2 }).format(value);
 }
 
-export default function CustomerOrdersClient({ tableId, tableNumber, legacyReference }: { tableId: number; tableNumber: string; legacyReference: string }) {
+function isOrderEditable(order: Order): boolean {
+  if (order.status !== "confirmed") return false;
+  if (!order.order_items || order.order_items.length === 0) return false;
+  return order.order_items.every(
+    (item) =>
+      (!item.completed_plates || item.completed_plates.length === 0) &&
+      (!item.served_plates || item.served_plates.length === 0),
+  );
+}
+
+export default function CustomerOrdersClient({
+  tableId,
+  tableNumber,
+  legacyReference,
+  menus = [],
+}: {
+  tableId: number;
+  tableNumber: string;
+  legacyReference: string;
+  menus?: CustomerMenu[];
+}) {
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [cancelMessage, setCancelMessage] = useState("");
   const [cancellingId, setCancellingId] = useState<string | null>(null);
+  const [editingOrder, setEditingOrder] = useState<Order | null>(null);
+  const [editSuccessMessage, setEditSuccessMessage] = useState("");
   const [connectionWarning, setConnectionWarning] = useState(false);
   const hasLoadedSuccessfullyRef = useRef(false);
   const isSessionActiveRef = useRef(true);
@@ -278,6 +271,14 @@ export default function CustomerOrdersClient({ tableId, tableNumber, legacyRefer
             ขาดการเชื่อมต่อ กำลังรอเชื่อมต่อใหม่
           </div>
         )}
+        {editSuccessMessage && (
+          <p
+            role="status"
+            className="mt-4 rounded-xl bg-green-50 border border-green-200 p-4 font-medium text-green-800"
+          >
+            {editSuccessMessage}
+          </p>
+        )}
         {cancelMessage && <p role="status" className="mt-4 rounded-xl bg-white p-4 text-zinc-800">{cancelMessage}</p>}
 
         {loading ? (
@@ -329,12 +330,36 @@ export default function CustomerOrdersClient({ tableId, tableNumber, legacyRefer
                   <span>รวมออเดอร์</span>
                   <span className="text-orange-500">{formatPrice(order.total_amount)} บาท</span>
                 </div>
-                {order.status === "confirmed" && <button type="button" disabled={cancellingId !== null}
-                  onClick={() => void cancelOrder(order.id)}
-                  className="mt-4 rounded-xl border border-red-300 px-4 py-2 font-semibold text-red-700 disabled:opacity-50">
-                  {cancellingId === order.id ? "กำลังยกเลิก..." : "ยกเลิกออเดอร์"}
-                </button>}
-                {order.status === "preparing" && <p className="mt-4 text-sm text-zinc-600">ร้านเริ่มทำอาหารแล้ว ไม่สามารถยกเลิกได้</p>}
+                {isOrderEditable(order) ? (
+                  <div className="mt-4 flex flex-wrap items-center gap-3">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setCancelMessage("");
+                        setEditSuccessMessage("");
+                        setEditingOrder(order);
+                      }}
+                      className="rounded-xl bg-orange-500 hover:bg-orange-600 px-4 py-2 font-semibold text-white shadow-xs transition"
+                    >
+                      แก้ไขออเดอร์
+                    </button>
+                    <button
+                      type="button"
+                      disabled={cancellingId !== null}
+                      onClick={() => void cancelOrder(order.id)}
+                      className="rounded-xl border border-red-300 px-4 py-2 font-semibold text-red-700 hover:bg-red-50 disabled:opacity-50 transition"
+                    >
+                      {cancellingId === order.id ? "กำลังยกเลิก..." : "ยกเลิกออเดอร์"}
+                    </button>
+                  </div>
+                ) : (
+                  (order.status === "preparing" ||
+                    (order.status === "confirmed" && !isOrderEditable(order))) && (
+                    <p className="mt-4 text-sm font-medium text-amber-700 bg-amber-50 p-3 rounded-xl border border-amber-200">
+                      ร้านเริ่มทำอาหารแล้ว ไม่สามารถแก้ไขออเดอร์ได้
+                    </p>
+                  )
+                )}
               </article>
             ))}
 
@@ -345,6 +370,25 @@ export default function CustomerOrdersClient({ tableId, tableNumber, legacyRefer
               </div>
             </div>
           </div>
+        )}
+
+        {editingOrder && (
+          <EditOrderModal
+            order={editingOrder}
+            menus={menus}
+            tableId={tableId}
+            sessionToken={
+              window.localStorage.getItem(`smart-order-session-id-${tableId}`) ??
+              window.localStorage.getItem(`smart-order-session-${legacyReference}`) ??
+              ""
+            }
+            onClose={() => setEditingOrder(null)}
+            onSuccess={async () => {
+              setEditingOrder(null);
+              setEditSuccessMessage("แก้ไขออเดอร์สำเร็จ");
+              await loadOrders(true);
+            }}
+          />
         )}
       </div>
     </main>

@@ -47,6 +47,7 @@ export async function POST(request: Request) {
         created_at,
         order_items (
           id,
+          menu_id,
           quantity,
           completed_plates,
           served_plates,
@@ -59,6 +60,7 @@ export async function POST(request: Request) {
           menus (name),
           order_item_options (
             id,
+            menu_option_id,
             option_name,
             additional_price,
             quantity
