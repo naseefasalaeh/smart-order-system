@@ -6,10 +6,11 @@ import { paidItemQuantity } from "@/lib/payment-progress";
 import { orderDisplayStatus } from "@/lib/plate-progress";
 import { formatOrderNumber } from "@/lib/order-number";
 import Link from "next/link";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useCustomerOrderEvents } from "@/components/customer-order-events";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { CustomerMenu } from "@/lib/customer-menu-catalog";
-import EditOrderModal, { type OrderData } from "./EditOrderModal";
+import type { OrderData } from "./EditOrderModal";
 
 type Order = OrderData;
 
@@ -48,27 +49,14 @@ export default function CustomerOrdersClient({
   legacyReference: string;
   menus?: CustomerMenu[];
 }) {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const isEditSuccess = searchParams.get("editSuccess") === "1";
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [cancelMessage, setCancelMessage] = useState("");
   const [cancellingId, setCancellingId] = useState<string | null>(null);
-  const [editingOrderId, setEditingOrderId] = useState<string | null>(() => {
-    if (typeof window !== "undefined") {
-      const urlParams = new URLSearchParams(window.location.search);
-      const paramEditOrder = urlParams.get("editOrder");
-      if (paramEditOrder) return paramEditOrder;
-      try {
-        const savedDraft = window.sessionStorage.getItem(`smart-order-edit-draft-${tableId}`);
-        if (savedDraft) {
-          const parsed = JSON.parse(savedDraft);
-          return parsed?.orderId || null;
-        }
-      } catch {}
-    }
-    return null;
-  });
-  const [editSuccessMessage, setEditSuccessMessage] = useState("");
   const [connectionWarning, setConnectionWarning] = useState(false);
   const hasLoadedSuccessfullyRef = useRef(false);
   const isSessionActiveRef = useRef(true);
@@ -263,24 +251,106 @@ export default function CustomerOrdersClient({
     } finally { setCancellingId(null); }
   };
 
-  const handleCloseEdit = useCallback(() => {
-    setEditingOrderId(null);
-    if (typeof window !== "undefined") {
-      window.sessionStorage.removeItem(`smart-order-edit-draft-${tableId}`);
-      if (window.location.search.includes("editOrder")) {
+  useEffect(() => {
+    if (isEditSuccess) {
+      const timer = setTimeout(() => {
         const url = new URL(window.location.href);
-        url.searchParams.delete("editOrder");
+        url.searchParams.delete("editSuccess");
         window.history.replaceState({}, "", url.pathname + (url.search ? url.search : ""));
-      }
+      }, 4000);
+      return () => clearTimeout(timer);
     }
-  }, [tableId]);
+  }, [isEditSuccess]);
 
-  const editingOrder = useMemo(() => {
-    if (!editingOrderId) return null;
-    const matched = orders.find((o) => o.id === editingOrderId);
-    if (matched && isOrderEditable(matched)) return matched;
-    return null;
-  }, [orders, editingOrderId]);
+  const handleStartEdit = (order: Order) => {
+    const draftItems = order.order_items.map((item, index) => {
+      const catalogMenu = menus.find((m) => m.id === item.menu_id);
+      const basePrice = catalogMenu
+        ? catalogMenu.price
+        : Number(item.menu_price_snapshot || item.unit_price);
+      const menuName =
+        item.menu_name_snapshot || item.menus?.name || catalogMenu?.name || "รายการอาหาร";
+
+      const optionSelections = (item.order_item_options ?? []).map((opt) => {
+        let optId = opt.menu_option_id;
+        if (!optId && catalogMenu) {
+          for (const grp of catalogMenu.option_groups) {
+            const matched = grp.options.find((o) => o.name === opt.option_name);
+            if (matched) {
+              optId = matched.id;
+              break;
+            }
+          }
+        }
+        return {
+          optionId: optId ?? opt.id,
+          quantity: opt.quantity || 1,
+        };
+      });
+
+      const selectedOptions = (item.order_item_options ?? []).map((opt) => {
+        let optId = opt.menu_option_id;
+        let groupName = "";
+        if (catalogMenu) {
+          for (const grp of catalogMenu.option_groups) {
+            const matched = grp.options.find((o) => o.name === opt.option_name);
+            if (matched) {
+              optId = matched.id;
+              groupName = grp.name;
+              break;
+            }
+          }
+        }
+        return {
+          id: optId ?? opt.id,
+          name: opt.option_name,
+          additional_price: Number(opt.additional_price || 0),
+          max_quantity: 99,
+          max_available_quantity: 99,
+          is_available: true,
+          quantity: opt.quantity || 1,
+          group_name: groupName,
+        };
+      });
+
+      const unitPrice =
+        (Math.round(basePrice * 100) +
+          selectedOptions.reduce(
+            (sum, o) => sum + Math.round(o.additional_price * 100) * o.quantity,
+            0,
+          )) /
+        100;
+
+      return {
+        cartId: `edit-${item.id}-${index}`,
+        menuId: item.menu_id || catalogMenu?.id || 0,
+        menuName,
+        basePrice,
+        quantity: item.quantity,
+        note: item.note || null,
+        optionSelections,
+        selectedOptions,
+        unitPrice,
+      };
+    });
+
+    const editDraft = {
+      orderId: order.id,
+      orderNumber: order.order_number,
+      diningType: order.dining_type,
+      orderNote: order.note || "",
+      items: draftItems,
+    };
+
+    if (typeof window !== "undefined") {
+      window.sessionStorage.setItem(
+        `smart-order-edit-draft-${tableId}`,
+        JSON.stringify(editDraft),
+      );
+    }
+
+    router.push(`/table/${legacyReference}?editOrder=${order.id}`);
+  };
 
   return (
     <main className="min-h-screen bg-zinc-100 px-5 py-8">
@@ -304,12 +374,12 @@ export default function CustomerOrdersClient({
             ขาดการเชื่อมต่อ กำลังรอเชื่อมต่อใหม่
           </div>
         )}
-        {editSuccessMessage && (
+        {isEditSuccess && (
           <p
             role="status"
             className="mt-4 rounded-xl bg-green-50 border border-green-200 p-4 font-medium text-green-800"
           >
-            {editSuccessMessage}
+            แก้ไขออเดอร์สำเร็จ
           </p>
         )}
         {cancelMessage && <p role="status" className="mt-4 rounded-xl bg-white p-4 text-zinc-800">{cancelMessage}</p>}
@@ -367,11 +437,8 @@ export default function CustomerOrdersClient({
                   <div className="mt-4 flex flex-wrap items-center gap-3">
                     <button
                       type="button"
-                      onClick={() => {
-                        setCancelMessage("");
-                        setEditSuccessMessage("");
-                        setEditingOrderId(order.id);
-                      }}
+                      data-testid="edit-order-btn"
+                      onClick={() => handleStartEdit(order)}
                       className="rounded-xl bg-orange-500 hover:bg-orange-600 px-4 py-2 font-semibold text-white shadow-xs transition"
                     >
                       แก้ไขออเดอร์
@@ -403,26 +470,6 @@ export default function CustomerOrdersClient({
               </div>
             </div>
           </div>
-        )}
-
-        {editingOrder && (
-          <EditOrderModal
-            order={editingOrder}
-            menus={menus}
-            tableId={tableId}
-            legacyReference={legacyReference}
-            sessionToken={
-              window.localStorage.getItem(`smart-order-session-id-${tableId}`) ??
-              window.localStorage.getItem(`smart-order-session-${legacyReference}`) ??
-              ""
-            }
-            onClose={handleCloseEdit}
-            onSuccess={async () => {
-              handleCloseEdit();
-              setEditSuccessMessage("แก้ไขออเดอร์สำเร็จ");
-              await loadOrders(true);
-            }}
-          />
         )}
       </div>
     </main>

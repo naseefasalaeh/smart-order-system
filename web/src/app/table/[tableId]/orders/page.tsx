@@ -1,3 +1,4 @@
+import { Suspense } from "react";
 import CustomerOrdersClient from "./CustomerOrdersClient";
 import { resolveTableReference } from "@/lib/table-reference";
 import { loadCustomerMenuCatalog } from "@/lib/customer-menu-catalog";
@@ -19,11 +20,13 @@ export default async function CustomerOrdersPage({ params }: CustomerOrdersPageP
   }
 
   return (
-    <CustomerOrdersClient
-      tableId={table.id}
-      tableNumber={String(table.table_number)}
-      legacyReference={tableId}
-      menus={menus}
-    />
+    <Suspense fallback={<main className="min-h-screen bg-zinc-100 p-8 text-center">กำลังโหลด...</main>}>
+      <CustomerOrdersClient
+        tableId={table.id}
+        tableNumber={String(table.table_number)}
+        legacyReference={tableId}
+        menus={menus}
+      />
+    </Suspense>
   );
 }
