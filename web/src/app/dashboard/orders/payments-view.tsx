@@ -1,5 +1,4 @@
 "use client";
-import Link from "next/link";
 import SessionPayment from "@/components/session-payment";
 import DashboardSidebar from "@/components/dashboard-sidebar";
 import OrderRealtimeRefresh from "@/components/order-realtime-refresh";
@@ -29,7 +28,6 @@ export default function OrdersView({ initial, userId, fullName, role }: { initia
             <h2 className="mt-1 text-3xl font-bold">รอชำระเงิน</h2>
             <p className="mt-2 text-zinc-600">เลือกจ่ายทั้งหมดหรือบางจาน รวมได้เฉพาะรอบการใช้โต๊ะเดียวกัน</p>
           </header>
-          <Link href="/dashboard/members" className="mt-3 inline-block text-sm text-orange-700 underline">ช่วยลูกค้าผูกอุปกรณ์สมาชิกเดิม</Link>
           {!error && [...sessions].map(([id, sessionOrders]) => <SessionPayment key={id} orders={sessionOrders} refresh={refreshAfterMutation} />)}
 
           {error ? (

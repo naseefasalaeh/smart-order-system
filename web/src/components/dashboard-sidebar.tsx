@@ -16,6 +16,7 @@ const menuItems = [
   { name: "วัตถุดิบ", href: "/dashboard/ingredients" },
   { name: "โต๊ะและ QR Code", href: "/dashboard/tables" },
   { name: "ตัวเลือกเสริม", href: "/dashboard/addons" },
+  { name: "จัดการสมาชิก", href: "/dashboard/members" },
   { name: "รายงาน", href: "/dashboard/reports" },
   { name: "จัดการผู้ใช้งาน", href: "/dashboard/users" },
 ];

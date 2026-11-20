@@ -413,10 +413,10 @@ export default function MenuClient({
         );
       }
 
-      const orderNumber =
-        (result.order?.order_number !== undefined && result.order?.order_number !== null ? formatOrderNumber(result.order.order_number) : undefined) ??
-        result.order?.id ??
-        "";
+      const formattedNum =
+        result.order?.order_number !== undefined && result.order?.order_number !== null
+          ? formatOrderNumber(result.order.order_number)
+          : "";
 
       setCart([]);
       pendingRequest.current = null;
@@ -424,9 +424,9 @@ export default function MenuClient({
       setShowCart(false);
 
       setSuccessMessage(
-        orderNumber
-          ? `สั่งอาหารสำเร็จ เลขที่ออเดอร์ ${orderNumber}`
-          : "สั่งอาหารสำเร็จ"
+        formattedNum && formattedNum !== "-"
+          ? `สั่งอาหารสำเร็จ เลขที่ออเดอร์ ${formattedNum}`
+          : "สั่งอาหารสำเร็จ เรียบร้อยแล้ว"
       );
 
       router.push(`/table/id-${tableId}/orders`);

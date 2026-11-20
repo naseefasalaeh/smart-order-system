@@ -24,3 +24,38 @@ button,
 input {
   font: inherit;
 }
+
+/* ซ่อนปุ่มลูกศรขึ้นลง (Spinner Buttons) สำหรับ input type="number" ทุกหน้า */
+/* Chrome, Safari, Edge, Opera */
+input[type="number"]::-webkit-outer-spin-button,
+input[type="number"]::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+/* Firefox and standard browsers */
+input[type="number"] {
+  -moz-appearance: textfield;
+  appearance: textfield;
+}
+
+/* Print Styles for Reports */
+@media print {
+  aside,
+  nav,
+  .no-print,
+  button:not(.print-keep) {
+    display: none !important;
+  }
+  body, main {
+    background: #ffffff !important;
+    color: #000000 !important;
+  }
+  section {
+    padding: 0 !important;
+  }
+  .print-break-inside-avoid {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+}
