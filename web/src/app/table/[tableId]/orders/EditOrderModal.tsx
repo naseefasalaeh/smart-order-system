@@ -1,6 +1,7 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import type { CustomerMenu } from "@/lib/customer-menu-catalog";
 import { formatOrderNumber } from "@/lib/order-number";
 import type { PaymentAllocation } from "@/lib/payment-progress";
@@ -40,7 +41,7 @@ export type OrderData = {
   order_items: OrderItemData[];
 };
 
-type EditableItemOption = {
+export type EditableItemOption = {
   optionId: number;
   optionName: string;
   additionalPrice: number;
@@ -76,6 +77,7 @@ export default function EditOrderModal({
   order,
   menus,
   tableId,
+  legacyReference,
   sessionToken,
   onClose,
   onSuccess,
@@ -83,11 +85,14 @@ export default function EditOrderModal({
   order: OrderData;
   menus: CustomerMenu[];
   tableId: number;
+  legacyReference?: string;
   sessionToken: string;
   onClose: () => void;
   onSuccess: () => Promise<void>;
 }) {
-  // Convert existing order items into EditableItem format
+  const router = useRouter();
+
+  // Convert existing order items into default EditableItem format
   const initialItems = useMemo<EditableItem[]>(() => {
     return order.order_items.map((item, index) => {
       const catalogMenu = menus.find((m) => m.id === item.menu_id);
@@ -99,7 +104,6 @@ export default function EditOrderModal({
 
       const mappedOptions: EditableItemOption[] = (item.order_item_options ?? []).map(
         (opt) => {
-          // If menu_option_id is missing, try to find in catalog
           let optId = opt.menu_option_id;
           if (!optId && catalogMenu) {
             for (const grp of catalogMenu.option_groups) {
@@ -135,17 +139,41 @@ export default function EditOrderModal({
     });
   }, [order, menus]);
 
-  const [items, setItems] = useState<EditableItem[]>(initialItems);
-  const [orderNote, setOrderNote] = useState(order.note || "");
+  // Load draft from sessionStorage if continuing an edit
+  const [items, setItems] = useState<EditableItem[]>(() => {
+    if (typeof window !== "undefined") {
+      try {
+        const saved = window.sessionStorage.getItem(`smart-order-edit-draft-${tableId}`);
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          if (parsed && parsed.orderId === order.id && Array.isArray(parsed.items)) {
+            return parsed.items;
+          }
+        }
+      } catch {}
+    }
+    return initialItems;
+  });
+
+  const [orderNote, setOrderNote] = useState<string>(() => {
+    if (typeof window !== "undefined") {
+      try {
+        const saved = window.sessionStorage.getItem(`smart-order-edit-draft-${tableId}`);
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          if (parsed && parsed.orderId === order.id && typeof parsed.orderNote === "string") {
+            return parsed.orderNote;
+          }
+        }
+      } catch {}
+    }
+    return order.note || "";
+  });
+
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
 
-  // Sub-modal states
-  const [showMenuPicker, setShowMenuPicker] = useState(false);
-  const [searchFilter, setSearchFilter] = useState("");
-  const [selectedCategory, setSelectedCategory] = useState("ทั้งหมด");
-
-  // Item Option Configurator states
+  // Item Option Configurator states (for modifying an item in the order)
   const [configuringMenu, setConfiguringMenu] = useState<CustomerMenu | null>(null);
   const [configuringTargetItem, setConfiguringTargetItem] = useState<EditableItem | null>(null);
   const [configuringQuantity, setConfiguringQuantity] = useState(1);
@@ -154,6 +182,23 @@ export default function EditOrderModal({
     Record<number, number>
   >({});
   const [optionConfigError, setOptionConfigError] = useState("");
+
+  // Sync draft state to sessionStorage whenever items or note change
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const draft = {
+        orderId: order.id,
+        orderNumber: order.order_number,
+        tableId,
+        items,
+        orderNote,
+      };
+      window.sessionStorage.setItem(
+        `smart-order-edit-draft-${tableId}`,
+        JSON.stringify(draft),
+      );
+    }
+  }, [items, orderNote, order.id, order.order_number, tableId]);
 
   // Realtime total calculation
   const newTotalAmount = useMemo(() => {
@@ -166,30 +211,6 @@ export default function EditOrderModal({
   }, [items]);
 
   const priceDiff = newTotalAmount - Number(order.total_amount);
-
-  // Available categories
-  const categories = useMemo(() => {
-    const set = new Set<string>();
-    menus.forEach((m) => {
-      if (m.category_name) set.add(m.category_name);
-    });
-    return ["ทั้งหมด", ...Array.from(set)];
-  }, [menus]);
-
-  // Filtered menus for Menu Picker
-  const filteredMenus = useMemo(() => {
-    return menus.filter((m) => {
-      if (!m.can_order) return false;
-      const matchesCategory =
-        selectedCategory === "ทั้งหมด" || m.category_name === selectedCategory;
-      const matchesSearch =
-        !searchFilter.trim() ||
-        m.name.toLowerCase().includes(searchFilter.trim().toLowerCase()) ||
-        (m.description &&
-          m.description.toLowerCase().includes(searchFilter.trim().toLowerCase()));
-      return matchesCategory && matchesSearch;
-    });
-  }, [menus, selectedCategory, searchFilter]);
 
   // Item quantity steppers
   function updateItemQuantity(tempId: string, delta: number) {
@@ -234,32 +255,9 @@ export default function EditOrderModal({
     setOptionConfigError("");
   }
 
-  // Open option configurator for a newly chosen menu
-  function openAddNewMenu(menu: CustomerMenu) {
-    setConfiguringMenu(menu);
-    setConfiguringTargetItem(null);
-    setConfiguringQuantity(1);
-    setConfiguringNote("");
-    setOptionConfigError("");
-
-    // Auto-select required default options if available
-    const initialSelections: Record<number, number> = {};
-    for (const group of menu.option_groups) {
-      if (group.is_required && group.options.length > 0) {
-        const available = group.options.filter((o) => o.is_available);
-        const countToSelect = Math.max(1, group.min_select || 1);
-        for (let i = 0; i < Math.min(countToSelect, available.length); i++) {
-          initialSelections[available[i].id] = 1;
-        }
-      }
-    }
-    setSelectedOptionQuantities(initialSelections);
-    setShowMenuPicker(false);
-  }
-
-  // Save configured options (either create new or update target)
+  // Save configured options for target item
   function saveConfiguredItem() {
-    if (!configuringMenu) return;
+    if (!configuringMenu || !configuringTargetItem) return;
 
     // Validate option groups
     for (const group of configuringMenu.option_groups) {
@@ -313,42 +311,52 @@ export default function EditOrderModal({
     const unitPrice = calculateItemUnitPrice(configuringMenu.price, chosenOptions);
     const subtotal = (Math.round(unitPrice * 100) * configuringQuantity) / 100;
 
-    if (configuringTargetItem) {
-      // Update existing item
-      setItems((prev) =>
-        prev.map((item) =>
-          item.tempId === configuringTargetItem.tempId
-            ? {
-                ...item,
-                quantity: configuringQuantity,
-                note: configuringNote.trim(),
-                options: chosenOptions,
-                unitPrice,
-                subtotal,
-              }
-            : item,
-        ),
-      );
-    } else {
-      // Add as new item
-      const newItem: EditableItem = {
-        tempId: `new-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
-        menuId: configuringMenu.id,
-        menuName: configuringMenu.name,
-        basePrice: configuringMenu.price,
-        quantity: configuringQuantity,
-        note: configuringNote.trim(),
-        options: chosenOptions,
-        unitPrice,
-        subtotal,
-      };
-      setItems((prev) => [...prev, newItem]);
-    }
+    // Update target item
+    setItems((prev) =>
+      prev.map((item) =>
+        item.tempId === configuringTargetItem.tempId
+          ? {
+              ...item,
+              quantity: configuringQuantity,
+              note: configuringNote.trim(),
+              options: chosenOptions,
+              unitPrice,
+              subtotal,
+            }
+          : item,
+      ),
+    );
 
     // Close configuration dialog
     setConfiguringMenu(null);
     setConfiguringTargetItem(null);
     setOptionConfigError("");
+  }
+
+  // Navigate to main ordering page to add a new menu item
+  function handleGoToMenuPage() {
+    if (typeof window !== "undefined") {
+      const draft = {
+        orderId: order.id,
+        orderNumber: order.order_number,
+        tableId,
+        items,
+        orderNote,
+      };
+      window.sessionStorage.setItem(
+        `smart-order-edit-draft-${tableId}`,
+        JSON.stringify(draft),
+      );
+    }
+    const targetRef = legacyReference || `id-${tableId}`;
+    router.push(`/table/${targetRef}?editOrder=${order.id}`);
+  }
+
+  function handleCancel() {
+    if (typeof window !== "undefined") {
+      window.sessionStorage.removeItem(`smart-order-edit-draft-${tableId}`);
+    }
+    onClose();
   }
 
   // Submit edited order to server
@@ -393,11 +401,14 @@ export default function EditOrderModal({
             result.error ||
             "แก้ไขออเดอร์ไม่สำเร็จ กรุณาตรวจสอบสถานะแล้วลองใหม่",
         );
-        // If status conflict (e.g. kitchen started cooking), refresh orders
         if (response.status === 409) {
           void onSuccess();
         }
         return;
+      }
+
+      if (typeof window !== "undefined") {
+        window.sessionStorage.removeItem(`smart-order-edit-draft-${tableId}`);
       }
 
       await onSuccess();
@@ -429,7 +440,7 @@ export default function EditOrderModal({
           </div>
           <button
             type="button"
-            onClick={onClose}
+            onClick={handleCancel}
             disabled={isSubmitting}
             className="rounded-full p-2 text-zinc-400 hover:bg-zinc-200 hover:text-zinc-700 transition"
             aria-label="ปิดหน้าต่าง"
@@ -463,15 +474,11 @@ export default function EditOrderModal({
               <button
                 type="button"
                 data-testid="add-menu-btn"
-                onClick={() => {
-                  setSearchFilter("");
-                  setSelectedCategory("ทั้งหมด");
-                  setShowMenuPicker(true);
-                }}
-                className="flex items-center gap-1.5 rounded-xl bg-orange-500 hover:bg-orange-600 px-3 py-1.5 text-sm font-semibold text-white shadow-xs transition"
+                onClick={handleGoToMenuPage}
+                className="flex items-center gap-1.5 rounded-xl bg-orange-500 hover:bg-orange-600 px-3.5 py-1.5 text-sm font-semibold text-white shadow-xs transition"
               >
                 <span>＋</span>
-                <span>เพิ่มเมนู</span>
+                <span>เพิ่มเมนูจากหน้าหลัก</span>
               </button>
             </div>
 
@@ -479,7 +486,7 @@ export default function EditOrderModal({
               <div className="rounded-2xl border-2 border-dashed border-zinc-200 p-8 text-center text-zinc-500">
                 <p>ไม่มีรายการอาหารในออเดอร์</p>
                 <p className="mt-1 text-xs text-zinc-400">
-                  กรุณากดปุ่ม &ldquo;เพิ่มเมนู&rdquo; หรือกดยกเลิกหากต้องการยกเลิกออเดอร์นี้
+                  กรุณากดปุ่ม &ldquo;เพิ่มเมนูจากหน้าหลัก&rdquo; หรือกดยกเลิกหากต้องการยกเลิกออเดอร์นี้
                 </p>
               </div>
             ) : (
@@ -637,7 +644,7 @@ export default function EditOrderModal({
         <footer className="flex items-center justify-end gap-3 border-t border-zinc-200 bg-zinc-50 px-6 py-4">
           <button
             type="button"
-            onClick={onClose}
+            onClick={handleCancel}
             disabled={isSubmitting}
             className="rounded-xl border border-zinc-300 px-5 py-2.5 font-semibold text-zinc-700 hover:bg-zinc-100 disabled:opacity-50 transition"
           >
@@ -655,106 +662,8 @@ export default function EditOrderModal({
         </footer>
       </div>
 
-      {/* Submodal 1: Menu Picker Modal */}
-      {showMenuPicker && (
-        <div
-          role="dialog"
-          aria-modal="true"
-          className="fixed inset-0 z-60 flex items-center justify-center bg-black/60 p-4 backdrop-blur-xs"
-        >
-          <div className="flex max-h-[85vh] w-full max-w-xl flex-col rounded-3xl bg-white shadow-2xl overflow-hidden">
-            <header className="flex items-center justify-between border-b border-zinc-200 px-6 py-4 bg-zinc-50">
-              <div>
-                <h3 className="text-lg font-bold text-zinc-900">เลือกเมนูอาหารเพื่อเพิ่ม</h3>
-                <p className="text-xs text-zinc-500">เลือกอาหารที่ต้องการสั่งเพิ่มในออเดอร์นี้</p>
-              </div>
-              <button
-                type="button"
-                onClick={() => setShowMenuPicker(false)}
-                className="rounded-full p-2 text-zinc-400 hover:bg-zinc-200 hover:text-zinc-700 transition"
-              >
-                ✕
-              </button>
-            </header>
-
-            {/* Search & Categories */}
-            <div className="p-4 border-b border-zinc-100 space-y-3 bg-zinc-50/50">
-              <input
-                type="text"
-                placeholder="ค้นหาชื่อเมนู..."
-                value={searchFilter}
-                onChange={(e) => setSearchFilter(e.target.value)}
-                className="w-full rounded-xl border border-zinc-300 px-4 py-2 text-sm focus:border-orange-500 focus:outline-hidden"
-              />
-              <div className="flex gap-1.5 overflow-x-auto pb-1 scrollbar-none">
-                {categories.map((cat) => (
-                  <button
-                    key={cat}
-                    type="button"
-                    onClick={() => setSelectedCategory(cat)}
-                    className={`shrink-0 rounded-lg px-3 py-1 text-xs font-semibold transition ${
-                      selectedCategory === cat
-                        ? "bg-orange-500 text-white"
-                        : "bg-zinc-200/80 text-zinc-700 hover:bg-zinc-300"
-                    }`}
-                  >
-                    {cat}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {/* Menus List */}
-            <div className="flex-1 overflow-y-auto p-4 divide-y divide-zinc-100">
-              {filteredMenus.length === 0 ? (
-                <div className="p-8 text-center text-zinc-500">
-                  ไม่พบเมนูที่ตรงกับคำค้นหา
-                </div>
-              ) : (
-                filteredMenus.map((menu) => (
-                  <div
-                    key={menu.id}
-                    className="flex items-center justify-between py-3.5 first:pt-0 gap-4"
-                  >
-                    <div className="flex-1 min-w-0">
-                      <p className="font-bold text-zinc-900">{menu.name}</p>
-                      {menu.description && (
-                        <p className="text-xs text-zinc-500 line-clamp-1 mt-0.5">
-                          {menu.description}
-                        </p>
-                      )}
-                      <p className="mt-1 text-sm font-semibold text-orange-600">
-                        {formatPrice(menu.price)} บาท
-                      </p>
-                    </div>
-                    <button
-                      type="button"
-                      data-testid="select-menu-btn"
-                      onClick={() => openAddNewMenu(menu)}
-                      className="shrink-0 rounded-xl bg-orange-500 hover:bg-orange-600 px-4 py-2 text-sm font-semibold text-white shadow-xs transition"
-                    >
-                      เลือก
-                    </button>
-                  </div>
-                ))
-              )}
-            </div>
-
-            <footer className="border-t border-zinc-200 px-6 py-3 bg-zinc-50 text-right">
-              <button
-                type="button"
-                onClick={() => setShowMenuPicker(false)}
-                className="rounded-xl border border-zinc-300 px-4 py-2 text-sm font-semibold text-zinc-700 hover:bg-zinc-100"
-              >
-                ปิด
-              </button>
-            </footer>
-          </div>
-        </div>
-      )}
-
-      {/* Submodal 2: Option Configurator Modal */}
-      {configuringMenu && (
+      {/* Option Configurator Modal for editing existing items */}
+      {configuringMenu && configuringTargetItem && (
         <div
           role="dialog"
           aria-modal="true"
@@ -764,8 +673,7 @@ export default function EditOrderModal({
             <header className="flex items-center justify-between border-b border-zinc-200 px-6 py-4 bg-zinc-50">
               <div>
                 <h3 className="text-lg font-bold text-zinc-900">
-                  {configuringTargetItem ? "แก้ไขตัวเลือก" : "เลือกตัวเลือก"} -{" "}
-                  {configuringMenu.name}
+                  แก้ไขตัวเลือก - {configuringMenu.name}
                 </h3>
                 <p className="text-xs text-zinc-500">
                   ราคาเริ่มต้น {formatPrice(configuringMenu.price)} บาท
@@ -825,7 +733,6 @@ export default function EditOrderModal({
                                   name={`group-${group.key}`}
                                   checked={currentQty === 1}
                                   onChange={() => {
-                                    // Reset other options in the single group
                                     const next = { ...selectedOptionQuantities };
                                     group.options.forEach((o) => {
                                       delete next[o.id];
@@ -860,7 +767,6 @@ export default function EditOrderModal({
                                 </span>
                               )}
 
-                              {/* Multi-quantity for non-single options */}
                               {!isSingle && option.max_quantity > 1 && currentQty > 0 && (
                                 <div className="flex items-center rounded-lg border border-zinc-300 bg-white">
                                   <button
@@ -961,7 +867,7 @@ export default function EditOrderModal({
                 onClick={saveConfiguredItem}
                 className="rounded-xl bg-orange-500 hover:bg-orange-600 px-5 py-2 font-bold text-white shadow-xs text-sm"
               >
-                {configuringTargetItem ? "บันทึกตัวเลือก" : "เพิ่มลงในออเดอร์"}
+                บันทึกตัวเลือก
               </button>
             </footer>
           </div>

@@ -53,7 +53,21 @@ export default function CustomerOrdersClient({
   const [error, setError] = useState("");
   const [cancelMessage, setCancelMessage] = useState("");
   const [cancellingId, setCancellingId] = useState<string | null>(null);
-  const [editingOrder, setEditingOrder] = useState<Order | null>(null);
+  const [editingOrderId, setEditingOrderId] = useState<string | null>(() => {
+    if (typeof window !== "undefined") {
+      const urlParams = new URLSearchParams(window.location.search);
+      const paramEditOrder = urlParams.get("editOrder");
+      if (paramEditOrder) return paramEditOrder;
+      try {
+        const savedDraft = window.sessionStorage.getItem(`smart-order-edit-draft-${tableId}`);
+        if (savedDraft) {
+          const parsed = JSON.parse(savedDraft);
+          return parsed?.orderId || null;
+        }
+      } catch {}
+    }
+    return null;
+  });
   const [editSuccessMessage, setEditSuccessMessage] = useState("");
   const [connectionWarning, setConnectionWarning] = useState(false);
   const hasLoadedSuccessfullyRef = useRef(false);
@@ -249,6 +263,25 @@ export default function CustomerOrdersClient({
     } finally { setCancellingId(null); }
   };
 
+  const handleCloseEdit = useCallback(() => {
+    setEditingOrderId(null);
+    if (typeof window !== "undefined") {
+      window.sessionStorage.removeItem(`smart-order-edit-draft-${tableId}`);
+      if (window.location.search.includes("editOrder")) {
+        const url = new URL(window.location.href);
+        url.searchParams.delete("editOrder");
+        window.history.replaceState({}, "", url.pathname + (url.search ? url.search : ""));
+      }
+    }
+  }, [tableId]);
+
+  const editingOrder = useMemo(() => {
+    if (!editingOrderId) return null;
+    const matched = orders.find((o) => o.id === editingOrderId);
+    if (matched && isOrderEditable(matched)) return matched;
+    return null;
+  }, [orders, editingOrderId]);
+
   return (
     <main className="min-h-screen bg-zinc-100 px-5 py-8">
       <div className="mx-auto max-w-3xl">
@@ -337,7 +370,7 @@ export default function CustomerOrdersClient({
                       onClick={() => {
                         setCancelMessage("");
                         setEditSuccessMessage("");
-                        setEditingOrder(order);
+                        setEditingOrderId(order.id);
                       }}
                       className="rounded-xl bg-orange-500 hover:bg-orange-600 px-4 py-2 font-semibold text-white shadow-xs transition"
                     >
@@ -377,14 +410,15 @@ export default function CustomerOrdersClient({
             order={editingOrder}
             menus={menus}
             tableId={tableId}
+            legacyReference={legacyReference}
             sessionToken={
               window.localStorage.getItem(`smart-order-session-id-${tableId}`) ??
               window.localStorage.getItem(`smart-order-session-${legacyReference}`) ??
               ""
             }
-            onClose={() => setEditingOrder(null)}
+            onClose={handleCloseEdit}
             onSuccess={async () => {
-              setEditingOrder(null);
+              handleCloseEdit();
               setEditSuccessMessage("แก้ไขออเดอร์สำเร็จ");
               await loadOrders(true);
             }}

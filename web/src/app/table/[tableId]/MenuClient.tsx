@@ -98,6 +98,38 @@ export default function MenuClient({
   const pendingRequest = useRef<{ payload: string; id: string; sessionToken: string } | null>(null);
   const [successMessage, setSuccessMessage] = useState("");
   const [errorMessage, setErrorMessage] = useState("");
+  const [editingOrderId] = useState<string | null>(() => {
+    if (typeof window !== "undefined") {
+      const urlParams = new URLSearchParams(window.location.search);
+      const fromUrl = urlParams.get("editOrder");
+      if (fromUrl) return fromUrl;
+      try {
+        const saved = window.sessionStorage.getItem(`smart-order-edit-draft-${tableId}`);
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          return parsed?.orderId || null;
+        }
+      } catch {}
+    }
+    return null;
+  });
+
+  const [editingOrderNumber] = useState<string | null>(() => {
+    if (typeof window !== "undefined") {
+      try {
+        const saved = window.sessionStorage.getItem(`smart-order-edit-draft-${tableId}`);
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          return parsed?.orderNumber ? String(parsed.orderNumber) : null;
+        }
+      } catch {}
+    }
+    return null;
+  });
+
+  function returnToEditOrder() {
+    router.push(`/table/${legacyReference}/orders?editOrder=${editingOrderId}`);
+  }
   async function getOrCreateSessionToken() {
     // A different tab may have changed localStorage while an order's response
     // was lost. Retry against the original round and original request ID.
@@ -305,6 +337,96 @@ export default function MenuClient({
     }, 2500);
   }
 
+  function addSelectedToEditOrder() {
+    if (!selectedMenu || !editingOrderId) return;
+
+    for (const group of selectedMenu.option_groups) {
+      const groupSelections = group.options.filter(
+        (option) => (selectedOptionQuantities[option.id] ?? 0) > 0,
+      );
+      const totalQuantity = groupSelections.reduce(
+        (total, option) => total + (selectedOptionQuantities[option.id] ?? 0),
+        0,
+      );
+
+      if (groupSelections.length < group.min_select) {
+        setErrorMessage(
+          `กรุณาเลือก “${group.name}” อย่างน้อย ${group.min_select} รายการ`,
+        );
+        return;
+      }
+
+      if (
+        groupSelections.length > group.max_select ||
+        totalQuantity > group.max_total_quantity
+      ) {
+        setErrorMessage(`ตัวเลือกในกลุ่ม “${group.name}” เกินจำนวนที่กำหนด`);
+        return;
+      }
+    }
+
+    const storageKey = `smart-order-edit-draft-${tableId}`;
+    let draftItems: Array<{
+      tempId: string;
+      menuId: number;
+      menuName: string;
+      basePrice: number;
+      quantity: number;
+      note: string;
+      options: Array<{
+        optionId: number;
+        optionName: string;
+        additionalPrice: number;
+        quantity: number;
+        groupName?: string;
+      }>;
+      unitPrice: number;
+      subtotal: number;
+    }> = [];
+    let draftOrderNote = "";
+
+    try {
+      const savedDraft = window.sessionStorage.getItem(storageKey);
+      if (savedDraft) {
+        const parsed = JSON.parse(savedDraft);
+        if (parsed?.items && Array.isArray(parsed.items)) {
+          draftItems = parsed.items;
+          draftOrderNote = parsed.orderNote || "";
+        }
+      }
+    } catch {}
+
+    const newItem = {
+      tempId: `new-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+      menuId: selectedMenu.id,
+      menuName: selectedMenu.name,
+      basePrice: selectedMenu.price,
+      quantity,
+      note: "",
+      options: selectedOptions.map((opt) => ({
+        optionId: opt.id,
+        optionName: opt.name,
+        additionalPrice: Number(opt.additional_price || 0),
+        quantity: opt.quantity || 1,
+        groupName: opt.group_name,
+      })),
+      unitPrice: selectedUnitPrice,
+      subtotal: (Math.round(selectedUnitPrice * 100) * quantity) / 100,
+    };
+
+    const updatedDraft = {
+      orderId: editingOrderId,
+      orderNumber: editingOrderNumber,
+      tableId: Number(tableId),
+      items: [...draftItems, newItem],
+      orderNote: draftOrderNote,
+    };
+
+    window.sessionStorage.setItem(storageKey, JSON.stringify(updatedDraft));
+    closeMenuOptions();
+    router.push(`/table/${legacyReference}/orders?editOrder=${editingOrderId}`);
+  }
+
   function increaseCartQuantity(cartId: string) {
     setCart((currentCart) =>
       currentCart.map((item) =>
@@ -445,6 +567,35 @@ export default function MenuClient({
   return (
     <>
       <OptionalMembership />
+      {editingOrderId && (
+        <div
+          data-testid="edit-order-mode-banner"
+          className="mt-6 rounded-2xl border border-amber-300 bg-amber-500 p-4 text-white shadow-md sm:p-5"
+        >
+          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+            <div className="flex items-center gap-3">
+              <span className="text-2xl">✏️</span>
+              <div>
+                <p className="font-bold text-base sm:text-lg">
+                  กำลังเลือกอาหารเพื่อเพิ่มในออเดอร์ {formatOrderNumber(editingOrderNumber)}
+                </p>
+                <p className="text-xs sm:text-sm text-amber-100">
+                  เลือกเมนูพร้อมรูปภาพและตัวเลือกเสริม เมื่อเลือกเสร็จระบบจะพากลับไปหน้าแก้ไขออเดอร์เดิมทันที
+                </p>
+              </div>
+            </div>
+            <button
+              type="button"
+              data-testid="return-to-edit-order-btn"
+              onClick={returnToEditOrder}
+              className="shrink-0 rounded-xl bg-white/20 hover:bg-white/30 px-4 py-2 text-sm font-bold text-white transition"
+            >
+              กลับไปที่ออเดอร์
+            </button>
+          </div>
+        </div>
+      )}
+
       {successMessage && (
         <div className="mt-6 rounded-2xl border border-green-200 bg-green-50 p-4 text-sm font-semibold text-green-700">
           {successMessage}
@@ -525,36 +676,77 @@ export default function MenuClient({
       </div>
 
       <aside aria-label="รายการในตะกร้า" className="order-first rounded-2xl border border-orange-200 bg-white p-5 shadow-sm lg:sticky lg:top-5 lg:order-last">
-        <div className="flex items-center justify-between gap-3">
-          <h3 className="text-xl font-bold text-zinc-900">ตะกร้าของคุณ</h3>
-          <span className="rounded-full bg-orange-100 px-3 py-1 text-sm font-semibold text-orange-800">{cartQuantity} จาน</span>
-        </div>
-        {cart.length === 0 ? <p className="mt-4 text-sm text-zinc-500">เลือกอาหารแล้วรายการจะแสดงตรงนี้</p> : <>
-          <ul className="mt-4 max-h-[45vh] space-y-4 overflow-y-auto">
-            {cart.map((item) => <li key={item.cartId} className="border-b border-zinc-100 pb-4">
-              <div className="flex items-start justify-between gap-3">
-                <p className="font-semibold text-zinc-900">{item.menuName}</p>
-                <p className="shrink-0 font-semibold text-orange-600">{formatPrice(item.unitPrice * item.quantity)} บาท</p>
-              </div>
-              {item.selectedOptions.length > 0 && <p className="mt-1 text-sm text-zinc-500">{item.selectedOptions.map((option) => `${option.name} × ${option.quantity}`).join(" · ")}</p>}
-              <div className="mt-3 flex items-center justify-between gap-2">
-                <div className="flex items-center rounded-lg border border-zinc-200">
-                  <button type="button" aria-label={`ลดจำนวน ${item.menuName}`} onClick={() => decreaseCartQuantity(item.cartId)} className="h-11 w-11 hover:bg-zinc-100">−</button>
-                  <span className="min-w-6 text-center font-semibold">{item.quantity}</span>
-                  <button type="button" aria-label={`เพิ่มจำนวน ${item.menuName}`} onClick={() => increaseCartQuantity(item.cartId)} className="h-11 w-11 hover:bg-zinc-100">+</button>
-                </div>
-                <button type="button" onClick={() => editCartItem(item)} className="min-h-11 px-2 text-sm font-semibold text-orange-700">แก้ไข</button>
-                <button type="button" aria-label={`ลบ ${item.menuName}`} onClick={() => removeCartItem(item.cartId)} className="min-h-11 px-2 text-sm text-red-600">ลบ</button>
-              </div>
-            </li>)}
-          </ul>
-          <div className="mt-4 flex items-center justify-between font-bold"><span>ยอดรวม</span><span className="text-xl text-orange-600">{formatPrice(totalAmount)} บาท</span></div>
-          <button type="button" onClick={() => { setShowCart(true); setErrorMessage(""); }} className="mt-4 min-h-12 w-full rounded-xl bg-orange-500 px-4 py-3 font-bold text-white hover:bg-orange-600">ตรวจรายการและสั่งอาหาร</button>
-        </>}
+        {editingOrderId ? (
+          <div>
+            <div className="flex items-center justify-between gap-3">
+              <h3 className="text-xl font-bold text-zinc-900">แก้ไขออเดอร์</h3>
+              <span className="rounded-full bg-amber-100 px-3 py-1 text-sm font-semibold text-amber-800">
+                {formatOrderNumber(editingOrderNumber)}
+              </span>
+            </div>
+            <p className="mt-4 text-sm text-zinc-600">
+              คุณกำลังอยู่ในโหมดเพิ่มเมนูเข้าออเดอร์เดิม กรุณาเลือกอาหารจากเมนูด้านซ้ายเพื่อเพิ่มรายการ
+            </p>
+            <button
+              type="button"
+              onClick={returnToEditOrder}
+              className="mt-6 min-h-12 w-full rounded-xl bg-amber-500 px-4 py-3 font-bold text-white hover:bg-amber-600"
+            >
+              กลับไปที่การแก้ไขออเดอร์
+            </button>
+          </div>
+        ) : (
+          <>
+            <div className="flex items-center justify-between gap-3">
+              <h3 className="text-xl font-bold text-zinc-900">ตะกร้าของคุณ</h3>
+              <span className="rounded-full bg-orange-100 px-3 py-1 text-sm font-semibold text-orange-800">{cartQuantity} จาน</span>
+            </div>
+            {cart.length === 0 ? <p className="mt-4 text-sm text-zinc-500">เลือกอาหารแล้วรายการจะแสดงตรงนี้</p> : <>
+              <ul className="mt-4 max-h-[45vh] space-y-4 overflow-y-auto">
+                {cart.map((item) => <li key={item.cartId} className="border-b border-zinc-100 pb-4">
+                  <div className="flex items-start justify-between gap-3">
+                    <p className="font-semibold text-zinc-900">{item.menuName}</p>
+                    <p className="shrink-0 font-semibold text-orange-600">{formatPrice(item.unitPrice * item.quantity)} บาท</p>
+                  </div>
+                  {item.selectedOptions.length > 0 && <p className="mt-1 text-sm text-zinc-500">{item.selectedOptions.map((option) => `${option.name} × ${option.quantity}`).join(" · ")}</p>}
+                  <div className="mt-3 flex items-center justify-between gap-2">
+                    <div className="flex items-center rounded-lg border border-zinc-200">
+                      <button type="button" aria-label={`ลดจำนวน ${item.menuName}`} onClick={() => decreaseCartQuantity(item.cartId)} className="h-11 w-11 hover:bg-zinc-100">−</button>
+                      <span className="min-w-6 text-center font-semibold">{item.quantity}</span>
+                      <button type="button" aria-label={`เพิ่มจำนวน ${item.menuName}`} onClick={() => increaseCartQuantity(item.cartId)} className="h-11 w-11 hover:bg-zinc-100">+</button>
+                    </div>
+                    <button type="button" onClick={() => editCartItem(item)} className="min-h-11 px-2 text-sm font-semibold text-orange-700">แก้ไข</button>
+                    <button type="button" aria-label={`ลบ ${item.menuName}`} onClick={() => removeCartItem(item.cartId)} className="min-h-11 px-2 text-sm text-red-600">ลบ</button>
+                  </div>
+                </li>)}
+              </ul>
+              <div className="mt-4 flex items-center justify-between font-bold"><span>ยอดรวม</span><span className="text-xl text-orange-600">{formatPrice(totalAmount)} บาท</span></div>
+              <button type="button" onClick={() => { setShowCart(true); setErrorMessage(""); }} className="mt-4 min-h-12 w-full rounded-xl bg-orange-500 px-4 py-3 font-bold text-white hover:bg-orange-600">ตรวจรายการและสั่งอาหาร</button>
+            </>}
+          </>
+        )}
       </aside>
       </div>
 
-      {cart.length > 0 && (
+      {editingOrderId && (
+        <div className="fixed inset-x-0 bottom-0 z-30 border-t border-amber-200 bg-amber-500 px-5 py-4 text-white shadow-[0_-5px_20px_rgba(0,0,0,0.15)] lg:hidden">
+          <div className="mx-auto flex max-w-5xl items-center justify-between gap-4">
+            <div>
+              <p className="text-sm font-semibold">กำลังเลือกเมนูเพิ่ม</p>
+              <p className="text-xs text-amber-100">ออเดอร์ {formatOrderNumber(editingOrderNumber)}</p>
+            </div>
+            <button
+              type="button"
+              onClick={returnToEditOrder}
+              className="rounded-xl bg-white px-5 py-2.5 text-sm font-bold text-amber-700 shadow-sm transition hover:bg-amber-50"
+            >
+              กลับไปที่ออเดอร์
+            </button>
+          </div>
+        </div>
+      )}
+
+      {!editingOrderId && cart.length > 0 && (
         <div className="fixed inset-x-0 bottom-0 z-30 border-t border-zinc-200 bg-white/95 px-5 py-4 shadow-[0_-5px_20px_rgba(0,0,0,0.08)] backdrop-blur lg:hidden">
           <div className="mx-auto flex max-w-5xl items-center justify-between gap-4">
             <div>
@@ -798,17 +990,14 @@ export default function MenuClient({
 
             <button
               type="button"
-              onClick={addToCart}
+              data-testid={editingOrderId ? "add-to-edit-order-btn" : "add-to-cart-btn"}
+              onClick={editingOrderId ? addSelectedToEditOrder : addToCart}
               className="mt-8 w-full rounded-xl bg-orange-500 px-5 py-4 font-bold text-white transition hover:bg-orange-600"
             >
-              {editingCartId
-                ? "บันทึกการแก้ไข"
-                : "เพิ่มลงตะกร้า"}{" "}
-              ·{" "}
-              {formatPrice(
-                selectedUnitPrice * quantity
-              )}{" "}
-              บาท
+              {editingOrderId
+                ? `เพิ่มในออเดอร์ที่กำลังแก้ไข · ${formatPrice(selectedUnitPrice * quantity)} บาท`
+                : (editingCartId ? "บันทึกการแก้ไข" : "เพิ่มลงตะกร้า") +
+                  ` · ${formatPrice(selectedUnitPrice * quantity)} บาท`}
             </button>
           </div>
         </div>

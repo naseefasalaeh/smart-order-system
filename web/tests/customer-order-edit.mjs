@@ -192,42 +192,69 @@ try {
   await page.click('button[aria-label="เพิ่มจำนวน"]');
   await page.waitForTimeout(300);
 
-  // Click "+ เพิ่มเมนู" to open Menu Picker
-  await page.locator('[data-testid="add-menu-btn"]').click();
-  await page.waitForSelector('text=เลือกเมนูอาหารเพื่อเพิ่ม');
-
-  // Screenshot 3: Menu Picker
-  await page.screenshot({
-    path: `${ARTIFACT_DIR}/edit-order-menu-picker-desktop.png`,
-  });
-  console.log('Captured: edit-order-menu-picker-desktop.png');
-
-  // Select the second menu item using data-testid
-  const selectButton = page.locator('[data-testid="select-menu-btn"]').first();
-  if ((await selectButton.count()) > 0) {
-    await selectButton.click();
-    await page.waitForTimeout(500);
-
-    // Option Configurator modal
-    await page.screenshot({
-      path: `${ARTIFACT_DIR}/edit-order-option-configurator-desktop.png`,
-    });
-    console.log('Captured: edit-order-option-configurator-desktop.png');
-
-    // Click "เพิ่มลงในออเดอร์"
-    await page.locator('[data-testid="confirm-options-btn"]').click();
-    await page.waitForTimeout(500);
-  }
-
   // Edit order note
   await page.fill('#edit-order-note', 'ขอช้อนส้อมเพิ่ม และเสิร์ฟพร้อมกัน');
+
+  // Click "+ เพิ่มเมนูจากหน้าหลัก" to navigate to main menu page
+  await page.locator('[data-testid="add-menu-btn"]').click();
+  await page.waitForURL(`**/table/id-${tableId}?editOrder=${testOrder.id}`);
+  await page.waitForSelector('[data-testid="edit-order-mode-banner"]');
+
+  // Screenshot 3: Main menu catalog in edit order mode
+  await page.screenshot({
+    path: `${ARTIFACT_DIR}/menu-catalog-edit-mode-desktop.png`,
+  });
+  console.log('Captured: menu-catalog-edit-mode-desktop.png');
+
+  // Select an item to add (e.g. click "เพิ่ม" on the first or second menu card)
+  const addButtons = page.locator('article button:has-text("เพิ่ม")');
+  await addButtons.first().click();
+  await page.waitForSelector('[data-testid="add-to-edit-order-btn"]');
+
+  // Check any required radio options if present
+  const radios = page.locator('input[type="radio"]');
+  const radioCount = await radios.count();
+  for (let r = 0; r < radioCount; r++) {
+    const radio = radios.nth(r);
+    const name = await radio.getAttribute('name');
+    if (name) {
+      const anyChecked = await page.locator(`input[type="radio"][name="${name}"]:checked`).count();
+      if (anyChecked === 0) {
+        await radio.check();
+      }
+    }
+  }
+
+  // Screenshot 4: Option modal in edit mode
+  await page.screenshot({
+    path: `${ARTIFACT_DIR}/menu-option-modal-edit-mode-desktop.png`,
+  });
+  console.log('Captured: menu-option-modal-edit-mode-desktop.png');
+
+  // Click "เพิ่มในออเดอร์ที่กำลังแก้ไข"
+  await page.locator('[data-testid="add-to-edit-order-btn"]').click();
+
+  // Should automatically navigate back to orders page and re-open Edit Order modal
+  await page.waitForURL(`**/table/id-${tableId}/orders?editOrder=${testOrder.id}`);
+  await page.waitForSelector('div[role="dialog"]');
+  await page.waitForSelector('[data-testid="save-order-changes-btn"]');
+
+  // Screenshot 5: Edit order modal with preserved draft + newly added item
+  await page.screenshot({
+    path: `${ARTIFACT_DIR}/edit-order-modal-with-new-item.png`,
+  });
+  console.log('Captured: edit-order-modal-with-new-item.png');
+
+  // Verify that the note was preserved in the draft
+  const preservedNote = await page.inputValue('#edit-order-note');
+  assert.equal(preservedNote, 'ขอช้อนส้อมเพิ่ม และเสิร์ฟพร้อมกัน', 'Order note should be preserved in draft');
 
   // Click "บันทึกการแก้ไข" (Save Changes)
   await page.locator('[data-testid="save-order-changes-btn"]').click();
   await page.waitForSelector('text=แก้ไขออเดอร์สำเร็จ');
   await page.waitForTimeout(1000);
 
-  // Screenshot 4: Result after saving edit
+  // Screenshot 6: Result after saving edit
   await page.screenshot({
     path: `${ARTIFACT_DIR}/customer-orders-desktop-edited-success.png`,
     fullPage: true,
