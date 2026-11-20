@@ -134,3 +134,76 @@ test("5. Reports dashboard supports Sales Bar Chart, Peak Hours, Cancellation Ra
   assert.ok(selectorContent.includes("window.print()"), "Selector must support printing to PDF");
 });
 
+test("6. Horizontal bar charts, Data consistency, and A4 PDF Print specifications", () => {
+  const pageContent = readFileSync("src/app/dashboard/reports/page.tsx", "utf8");
+  const chartsContent = readFileSync("src/components/reports-charts.tsx", "utf8");
+  const cssContent = readFileSync("src/app/globals.css", "utf8");
+
+  // 1. Horizontal Bar Charts for Payment Methods and Dining Type
+  assert.ok(chartsContent.includes("HorizontalBarList"), "Must export HorizontalBarList component");
+  assert.ok(pageContent.includes("paymentHorizontalBars"), "Must define paymentHorizontalBars");
+  assert.ok(pageContent.includes("diningHorizontalBars"), "Must define diningHorizontalBars");
+
+  // 2. Best Selling Items Horizontal Bar Chart + Table
+  assert.ok(chartsContent.includes("BestSellingSection"), "Must export BestSellingSection component");
+  assert.ok(pageContent.includes("<BestSellingSection"), "Must render BestSellingSection in page");
+
+  // 3. Customer Demographics with client-side interactive filters
+  assert.ok(chartsContent.includes("DemographicsSection"), "Must export DemographicsSection component");
+  assert.ok(pageContent.includes("<DemographicsSection"), "Must render DemographicsSection in page");
+
+  // 4. Data Consistency: Completed Orders & Dining Type
+  assert.ok(pageContent.includes("completedDineInCount"), "Must calculate completed dine-in count");
+  assert.ok(pageContent.includes("completedTakeawayCount"), "Must calculate completed takeaway count");
+  assert.ok(pageContent.includes("dining_type"), "Must select dining_type for completed orders");
+
+  // 5. A4 Print & PDF styles
+  assert.ok(cssContent.includes("@page"), "Must define @page rule for PDF/Print");
+  assert.ok(cssContent.includes("A4 portrait"), "Must specify A4 portrait");
+  assert.ok(cssContent.includes("break-inside: avoid"), "Must prevent breaking cards and charts across pages");
+  assert.ok(pageContent.includes("print:block"), "Must render corporate print letterhead");
+});
+
+test("7. PDF Export fixes: Total orders consistency, Peak hour revenue, Demographics units, and Balanced A4 layout", () => {
+  const pageContent = readFileSync("src/app/dashboard/reports/page.tsx", "utf8");
+  const chartsContent = readFileSync("src/components/reports-charts.tsx", "utf8");
+
+  // 1. Order count & cancellation rate consistency (Problem 1)
+  assert.ok(
+    pageContent.includes('order.status === "completed"') && pageContent.includes('order.status === "cancelled"'),
+    "Must partition completed and cancelled orders from the same period orders query"
+  );
+  assert.ok(
+    pageContent.includes("cancellationRate") && pageContent.includes("(primaryData.cancelledCount / primaryData.totalOrdersCount) * 100"),
+    "Must calculate cancellation rate strictly against total period orders"
+  );
+
+  // 2. Peak ordering hours revenue alignment (Problem 2)
+  assert.ok(
+    pageContent.includes("peakHourBuckets[h].sales += Number(o.total_amount ?? 0)"),
+    "Must calculate peak hour revenue directly from completed orders to prevent ฿0 revenue"
+  );
+
+  // 3. Customer Demographics dish units (Problem 3)
+  assert.ok(
+    chartsContent.includes("จำนวนจานที่สั่ง (Dishes)"),
+    "Must explicitly label Demographics column as dishes/items ordered"
+  );
+  assert.ok(
+    chartsContent.includes("completedOrderCount"),
+    "DemographicsSection must accept completedOrderCount to provide clear context against orders"
+  );
+
+  // 4. Balanced A4 PDF layout (Problem 4)
+  assert.ok(
+    chartsContent.includes("print:grid-cols-2"),
+    "Payment Methods and Dining Type must display side-by-side in print"
+  );
+  assert.ok(
+    pageContent.includes("print-page-break-before"),
+    "Must use print-page-break-before to eliminate unbalanced single-item pages in A4 PDF export"
+  );
+});
+
+
+

@@ -40,22 +40,58 @@ input[type="number"] {
 }
 
 /* Print Styles for Reports */
+@page {
+  size: A4 portrait;
+  margin: 8mm 10mm 8mm 10mm;
+}
+
 @media print {
   aside,
   nav,
   .no-print,
-  button:not(.print-keep) {
+  button:not(.print-keep),
+  input,
+  select,
+  form {
     display: none !important;
   }
   body, main {
     background: #ffffff !important;
-    color: #000000 !important;
+    color: #18181b !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    font-size: 9pt !important;
+    line-height: 1.25 !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
   }
   section {
     padding: 0 !important;
+    margin: 0 !important;
   }
-  .print-break-inside-avoid {
-    break-inside: avoid;
-    page-break-inside: avoid;
+  .print-break-inside-avoid,
+  tr,
+  svg {
+    break-inside: avoid !important;
+    page-break-inside: avoid !important;
+  }
+  .print-page-break-before {
+    break-before: page !important;
+    page-break-before: always !important;
+  }
+  .print-page-break-after {
+    break-after: page !important;
+    page-break-after: always !important;
+  }
+  .shadow-sm, .shadow-md, .shadow-lg, .shadow-xs, .shadow {
+    box-shadow: none !important;
+  }
+  .border-zinc-200\/80, .border-zinc-200, .border-zinc-100 {
+    border-color: #e4e4e7 !important;
+  }
+  .print-chart-svg {
+    max-height: 155px !important;
+    height: 155px !important;
+    width: 100% !important;
   }
 }
