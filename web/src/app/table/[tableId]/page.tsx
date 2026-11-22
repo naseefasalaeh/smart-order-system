@@ -1,0 +1,184 @@
+import Link from "next/link";
+import { loadCustomerMenuCatalog } from "@/lib/customer-menu-catalog";
+import MenuClient from "./MenuClient";
+import { resolveTableReference } from "@/lib/table-reference";
+
+type TablePageProps = {
+  params: Promise<{
+    tableId: string;
+  }>;
+};
+
+export default async function TablePage({ params }: TablePageProps) {
+  const { tableId } = await params;
+
+  if (!/^(id-)?[1-9]\d*$/.test(tableId)) {
+    return (
+      <main className="min-h-screen bg-zinc-100 px-5 py-16">
+        <div className="mx-auto max-w-xl rounded-2xl bg-white p-8 text-center shadow-sm">
+          <h1 className="text-2xl font-bold text-red-600">
+            หมายเลขโต๊ะไม่ถูกต้อง
+          </h1>
+
+          <p className="mt-3 text-sm text-zinc-600">
+            กรุณาเลือกโต๊ะใหม่อีกครั้ง
+          </p>
+        </div>
+      </main>
+    );
+  }
+
+  let table: Awaited<ReturnType<typeof resolveTableReference>> = null;
+  let tableError = false;
+  try { table = await resolveTableReference(tableId); }
+  catch (error) { tableError = true; console.error("Resolve table failed", error); }
+
+  if (tableError) {
+    console.error("โหลดข้อมูลโต๊ะไม่สำเร็จ", tableError);
+    return (
+      <main className="min-h-screen bg-zinc-100 px-5 py-16">
+        <div className="mx-auto max-w-xl rounded-2xl bg-white p-8 shadow-sm">
+          <h1 className="text-center text-2xl font-bold text-red-600">
+            โหลดข้อมูลโต๊ะไม่สำเร็จ
+          </h1>
+
+          <p className="mt-3 text-center text-sm text-zinc-600">
+            หมายเลขโต๊ะ: {tableId}
+          </p>
+
+          <p className="mt-3 text-center text-sm text-zinc-600">
+            กรุณาลองใหม่อีกครั้งหรือติดต่อพนักงาน
+          </p>
+        </div>
+      </main>
+    );
+  }
+
+  if (!table) {
+    return (
+      <main className="min-h-screen bg-zinc-100 px-5 py-16">
+        <div className="mx-auto max-w-xl rounded-2xl bg-white p-8 text-center shadow-sm">
+          <h1 className="text-2xl font-bold text-red-600">
+            ไม่พบข้อมูลโต๊ะ
+          </h1>
+
+          <p className="mt-2 text-sm text-zinc-600">
+            ไม่พบโต๊ะหมายเลข:
+          </p>
+
+          <p className="mt-2 break-all rounded-xl bg-zinc-100 p-3 text-sm font-semibold">
+            {tableId}
+          </p>
+        </div>
+      </main>
+    );
+  }
+
+  if (table.status === "inactive") {
+    return <main className="min-h-screen bg-zinc-100 p-8"><div className="mx-auto max-w-xl rounded-2xl bg-white p-8 text-center shadow-sm">
+      <h1 className="text-2xl font-bold text-red-700">โต๊ะนี้ปิดใช้งาน</h1>
+      <p className="mt-3 text-zinc-600">กรุณาติดต่อพนักงานก่อนสั่งอาหาร</p>
+    </div></main>;
+  }
+
+  let finalMenus = [] as Awaited<ReturnType<typeof loadCustomerMenuCatalog>>;
+  let loadError = false;
+
+  try {
+    finalMenus = await loadCustomerMenuCatalog();
+  } catch (error) {
+    loadError = true;
+    console.error("โหลด customer menu catalog ไม่สำเร็จ", error);
+  }
+
+  return (
+    <main className="min-h-screen bg-zinc-100 pb-32">
+      <header className="bg-zinc-900 text-white shadow-md">
+        <div className="mx-auto max-w-7xl px-5 py-7">
+          <p className="text-sm font-semibold tracking-[0.2em] text-orange-400">
+            SMART ORDER
+          </p>
+
+          <div className="mt-1 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+            <div>
+              <h1 className="text-2xl font-bold">
+                เลือกเมนูอาหาร
+              </h1>
+
+              <p className="mt-1 text-sm text-zinc-300">
+                เลือกอาหารที่ต้องการแล้วเพิ่มลงตะกร้า
+              </p>
+            </div>
+
+            <div className="flex flex-wrap items-center justify-between gap-2 sm:justify-end">
+              <div className="flex flex-wrap justify-end gap-2">
+                <Link
+                  href={`/table/id-${table.id}/orders`}
+                  className="rounded-xl border border-orange-400 px-4 py-3 text-sm font-bold text-orange-300 transition hover:bg-orange-500 hover:text-white"
+                >
+                  ดูออเดอร์ของฉัน
+                </Link>
+
+                <Link
+                  href={`/table/id-${table.id}/queue`}
+                  className="rounded-xl border border-orange-400 px-4 py-3 text-sm font-bold text-orange-300 transition hover:bg-orange-500 hover:text-white"
+                >
+                  ดูคิวร้าน
+                </Link>
+              </div>
+
+              <div className="rounded-xl bg-orange-500 px-4 py-2 text-center">
+                <p className="text-xs text-orange-100">
+                  หมายเลขโต๊ะ
+                </p>
+
+                <p className="text-xl font-bold">
+                  {table.table_number}
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </header>
+
+      <section className="mx-auto max-w-7xl px-5 py-8">
+        <div>
+          <p className="font-semibold text-orange-500">
+            รายการอาหาร
+          </p>
+
+          <h2 className="mt-1 text-3xl font-bold text-zinc-900">
+            เมนูแนะนำ
+          </h2>
+        </div>
+
+        {loadError ? (
+          <div className="mt-8 rounded-2xl bg-red-50 p-6 text-red-700 shadow-sm">
+            <p className="font-semibold">
+              ไม่สามารถโหลดรายการอาหารได้
+            </p>
+
+            <p className="mt-2 text-sm">กรุณาลองใหม่อีกครั้งหรือติดต่อพนักงาน</p>
+          </div>
+        ) : finalMenus.length === 0 ? (
+          <div className="mt-8 rounded-2xl bg-white p-10 text-center shadow-sm">
+            <p className="font-semibold text-zinc-700">
+              ยังไม่มีเมนูที่เปิดขาย
+            </p>
+
+            <p className="mt-1 text-sm text-zinc-400">
+              กรุณาติดต่อพนักงาน
+            </p>
+          </div>
+        ) : (
+          <MenuClient
+            menus={finalMenus}
+            tableId={String(table.id)}
+            tableNumber={String(table.table_number)}
+            legacyReference={tableId}
+          />
+        )}
+      </section>
+    </main>
+  );
+}

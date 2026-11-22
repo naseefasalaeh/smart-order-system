@@ -12,6 +12,7 @@
 
 # testing
 /coverage
+/.test-artifacts/
 
 # next.js
 /.next/
@@ -33,8 +34,14 @@ yarn-error.log*
 # env files (can opt-in for committing if needed)
 .env*
 
+# uploaded files
+/public/uploads/
+
 # vercel
 .vercel
+
+# Supabase CLI local link metadata
+/supabase/.temp/
 
 # typescript
 *.tsbuildinfo

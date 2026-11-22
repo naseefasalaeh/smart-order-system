@@ -1,0 +1,1195 @@
+"use client";
+
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
+import OptionalMembership from "@/components/optional-membership";
+import { formatOrderNumber } from "@/lib/order-number";
+
+type MenuOption = {
+  id: number;
+  name: string;
+  additional_price: number;
+  max_quantity: number;
+  max_available_quantity: number;
+  is_available: boolean;
+};
+
+type MenuOptionGroup = {
+  key: string;
+  id: number | null;
+  name: string;
+  selection_type: "single" | "multiple";
+  is_required: boolean;
+  min_select: number;
+  max_select: number;
+  max_total_quantity: number;
+  options: MenuOption[];
+};
+
+type Menu = {
+  category_name: string;
+  id: number;
+  name: string;
+  description: string | null;
+  price: number;
+  image_url: string | null;
+  can_order: boolean;
+  option_groups: MenuOptionGroup[];
+};
+
+type MenuClientProps = {
+  menus: Menu[];
+  tableId: string;
+  tableNumber: string;
+  legacyReference: string;
+};
+
+type CartItem = {
+  cartId: string;
+  menuId: number;
+  menuName: string;
+  basePrice: number;
+  quantity: number;
+  note: string | null;
+  optionSelections: Array<{
+    optionId: number;
+    quantity: number;
+  }>;
+  selectedOptions: Array<MenuOption & { quantity: number; group_name: string }>;
+  unitPrice: number;
+};
+
+function formatPrice(price: number) {
+  return new Intl.NumberFormat("th-TH", {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 2,
+  }).format(price);
+}
+
+function createCartId() {
+  return `${Date.now()}-${Math.random()
+    .toString(36)
+    .slice(2, 10)}`;
+}
+
+export default function MenuClient({
+  menus,
+  tableId,
+  tableNumber,
+  legacyReference,
+}: MenuClientProps) {
+  const router = useRouter();
+
+  const [editingOrderId] = useState<string | null>(() => {
+    if (typeof window !== "undefined") {
+      const urlParams = new URLSearchParams(window.location.search);
+      const fromUrl = urlParams.get("editOrder");
+      if (fromUrl) return fromUrl;
+      try {
+        const saved = window.sessionStorage.getItem(`smart-order-edit-draft-${tableId}`);
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          return parsed?.orderId || null;
+        }
+      } catch {}
+    }
+    return null;
+  });
+
+  const [editingOrderNumber] = useState<string | null>(() => {
+    if (typeof window !== "undefined") {
+      try {
+        const saved = window.sessionStorage.getItem(`smart-order-edit-draft-${tableId}`);
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          return parsed?.orderNumber ? String(parsed.orderNumber) : null;
+        }
+      } catch {}
+    }
+    return null;
+  });
+
+  const [cart, setCart] = useState<CartItem[]>(() => {
+    if (typeof window !== "undefined") {
+      try {
+        const urlParams = new URLSearchParams(window.location.search);
+        const editOrderId = urlParams.get("editOrder");
+        const saved = window.sessionStorage.getItem(`smart-order-edit-draft-${tableId}`);
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          if (parsed && (!editOrderId || parsed.orderId === editOrderId) && Array.isArray(parsed.items)) {
+            return parsed.items;
+          }
+        }
+      } catch {}
+    }
+    return [];
+  });
+
+  const [diningType, setDiningType] = useState<"dine_in" | "takeaway">(() => {
+    if (typeof window !== "undefined") {
+      try {
+        const saved = window.sessionStorage.getItem(`smart-order-edit-draft-${tableId}`);
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          if (parsed?.diningType === "takeaway" || parsed?.diningType === "dine_in") {
+            return parsed.diningType;
+          }
+        }
+      } catch {}
+    }
+    return "dine_in";
+  });
+
+  const [orderNote, setOrderNote] = useState(() => {
+    if (typeof window !== "undefined") {
+      try {
+        const urlParams = new URLSearchParams(window.location.search);
+        const editOrderId = urlParams.get("editOrder");
+        const saved = window.sessionStorage.getItem(`smart-order-edit-draft-${tableId}`);
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          if (parsed && (!editOrderId || parsed.orderId === editOrderId) && typeof parsed.orderNote === "string") {
+            return parsed.orderNote;
+          }
+        }
+      } catch {}
+    }
+    return "";
+  });
+
+  const [category, setCategory] = useState("");
+  const [selectedMenu, setSelectedMenu] = useState<Menu | null>(null);
+  const [selectedOptionQuantities, setSelectedOptionQuantities] = useState<Record<number, number>>({});
+  const [quantity, setQuantity] = useState(1);
+  const [editingCartId, setEditingCartId] = useState<string | null>(null);
+  const [showCart, setShowCart] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const submitting = useRef(false);
+  const pendingRequest = useRef<{ payload: string; id: string; sessionToken: string } | null>(null);
+  const [successMessage, setSuccessMessage] = useState("");
+  const [errorMessage, setErrorMessage] = useState("");
+
+  // Keep draft in sync while in edit mode
+  useEffect(() => {
+    if (!editingOrderId || typeof window === "undefined") return;
+    const draft = {
+      orderId: editingOrderId,
+      orderNumber: editingOrderNumber,
+      diningType,
+      orderNote,
+      items: cart,
+    };
+    window.sessionStorage.setItem(
+      `smart-order-edit-draft-${tableId}`,
+      JSON.stringify(draft),
+    );
+  }, [editingOrderId, editingOrderNumber, diningType, orderNote, cart, tableId]);
+
+  function cancelEditOrder() {
+    if (typeof window !== "undefined") {
+      window.sessionStorage.removeItem(`smart-order-edit-draft-${tableId}`);
+    }
+    router.push(`/table/${legacyReference}/orders`);
+  }
+  async function getOrCreateSessionToken() {
+    // A different tab may have changed localStorage while an order's response
+    // was lost. Retry against the original round and original request ID.
+    if (pendingRequest.current) return pendingRequest.current.sessionToken;
+    const storageKey = `smart-order-session-id-${tableId}`;
+    const resolveToken = async () => {
+      const existingToken = window.localStorage.getItem(storageKey) ?? window.localStorage.getItem(`smart-order-session-${legacyReference}`);
+      const uuidPattern =
+        /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+      let token =
+        existingToken && uuidPattern.test(existingToken)
+          ? existingToken
+          : window.crypto.randomUUID();
+
+      // Reuse active rounds. Only replace a saved token after the server confirms
+      // that its round is closed; a network failure must never start another round.
+      if (existingToken && uuidPattern.test(existingToken)) {
+        const response = await fetch("/api/customer-orders", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ tableId: Number(tableId), sessionToken: token }),
+          cache: "no-store",
+        });
+        if (!response.ok) throw new Error("ตรวจสอบรอบโต๊ะไม่สำเร็จ กรุณาลองใหม่");
+        const result = await response.json() as { session: { status: string } | null };
+        if (result.session?.status === "closed") {
+          token = window.crypto.randomUUID();
+          // Remove the migrated alias too, so it cannot resurrect the closed round.
+          window.localStorage.removeItem(`smart-order-session-${legacyReference}`);
+        }
+      }
+
+      if (window.localStorage.getItem(storageKey) !== token) {
+        window.localStorage.setItem(storageKey, token);
+      }
+
+      return token;
+    };
+    // Serialize round renewal across tabs on browsers with Web Locks.
+    return navigator.locks
+      ? navigator.locks.request(storageKey, resolveToken)
+      : resolveToken();
+  }
+
+  const cartQuantity = useMemo(
+    () =>
+      cart.reduce(
+        (total, item) => total + item.quantity,
+        0
+      ),
+    [cart]
+  );
+
+  const totalAmount = useMemo(
+    () =>
+      cart.reduce(
+        (total, item) =>
+          total + item.unitPrice * item.quantity,
+        0
+      ),
+    [cart]
+  );
+
+  const selectedOptions = useMemo(
+    () =>
+      (selectedMenu?.option_groups ?? [])
+        .flatMap((group) =>
+          group.options.map((option) => ({
+            ...option,
+            group_name: group.name,
+            quantity: selectedOptionQuantities[option.id] ?? 0,
+          })),
+        )
+        .filter((option) => option.quantity > 0),
+    [selectedMenu, selectedOptionQuantities]
+  );
+
+  const selectedUnitPrice =
+    (selectedMenu?.price ?? 0) +
+    selectedOptions.reduce(
+      (total, option) =>
+        total + option.additional_price * option.quantity,
+      0
+    );
+
+  function openMenuOptions(menu: Menu) {
+    if (!menu.can_order) {
+      return;
+    }
+
+    setSelectedMenu(menu);
+    setSelectedOptionQuantities({});
+    setQuantity(1);
+    setEditingCartId(null);
+    setErrorMessage("");
+    setSuccessMessage("");
+  }
+
+  function closeMenuOptions() {
+    setSelectedMenu(null);
+    setSelectedOptionQuantities({});
+    setQuantity(1);
+    setEditingCartId(null);
+  }
+
+  function editCartItem(item: CartItem) {
+    const menu = menus.find(
+      (currentMenu) => currentMenu.id === item.menuId
+    );
+
+    if (!menu) {
+      setErrorMessage("ไม่พบข้อมูลเมนูที่ต้องการแก้ไข");
+      return;
+    }
+
+    setSelectedMenu(menu);
+    setSelectedOptionQuantities(
+      Object.fromEntries(
+        item.optionSelections.map((selection) => [
+          selection.optionId,
+          selection.quantity,
+        ])
+      )
+    );
+    setQuantity(item.quantity);
+    setEditingCartId(item.cartId);
+    setShowCart(false);
+    setErrorMessage("");
+    setSuccessMessage("");
+  }
+
+  function addToCart() {
+    if (!selectedMenu) {
+      return;
+    }
+
+    for (const group of selectedMenu.option_groups) {
+      const groupSelections = group.options.filter(
+        (option) => (selectedOptionQuantities[option.id] ?? 0) > 0,
+      );
+      const totalQuantity = groupSelections.reduce(
+        (total, option) => total + (selectedOptionQuantities[option.id] ?? 0),
+        0,
+      );
+
+      if (groupSelections.length < group.min_select) {
+        setErrorMessage(
+          `กรุณาเลือก “${group.name}” อย่างน้อย ${group.min_select} รายการ`,
+        );
+        return;
+      }
+
+      if (
+        groupSelections.length > group.max_select ||
+        totalQuantity > group.max_total_quantity
+      ) {
+        setErrorMessage(`ตัวเลือกในกลุ่ม “${group.name}” เกินจำนวนที่กำหนด`);
+        return;
+      }
+    }
+
+    const wasEditing = editingCartId !== null;
+
+    const newItem: CartItem = {
+      cartId: createCartId(),
+      menuId: selectedMenu.id,
+      menuName: selectedMenu.name,
+      basePrice: selectedMenu.price,
+      quantity,
+      note: null,
+      optionSelections: selectedOptions.map((option) => ({
+        optionId: option.id,
+        quantity: option.quantity,
+      })),
+      selectedOptions,
+      unitPrice: selectedUnitPrice,
+    };
+
+    setCart((currentCart) =>
+      wasEditing
+        ? currentCart.map((item) =>
+            item.cartId === editingCartId
+              ? {
+                  ...newItem,
+                  cartId: editingCartId,
+                }
+              : item
+          )
+        : [...currentCart, newItem]
+    );
+
+    closeMenuOptions();
+    if (wasEditing) {
+      setShowCart(true);
+    }
+    setSuccessMessage(
+      wasEditing
+        ? "แก้ไขรายการในตะกร้าแล้ว"
+        : "เพิ่มเมนูลงตะกร้าแล้ว"
+    );
+    setErrorMessage("");
+
+    window.setTimeout(() => {
+      setSuccessMessage("");
+    }, 2500);
+  }
+
+  function increaseCartQuantity(cartId: string) {
+    setCart((currentCart) =>
+      currentCart.map((item) =>
+        item.cartId === cartId
+          ? {
+              ...item,
+              quantity: item.quantity + 1,
+            }
+          : item
+      )
+    );
+  }
+
+  function decreaseCartQuantity(cartId: string) {
+    setCart((currentCart) =>
+      currentCart.flatMap((item) => {
+        if (item.cartId !== cartId) {
+          return [item];
+        }
+
+        if (item.quantity <= 1) {
+          return [];
+        }
+
+        return [
+          {
+            ...item,
+            quantity: item.quantity - 1,
+          },
+        ];
+      })
+    );
+  }
+
+  function removeCartItem(cartId: string) {
+    setCart((currentCart) =>
+      currentCart.filter(
+        (item) => item.cartId !== cartId
+      )
+    );
+  }
+
+  async function submitOrder() {
+    if (cart.length === 0 || submitting.current) {
+      if (cart.length === 0 && editingOrderId) {
+        setErrorMessage(
+          "ต้องมีรายการอาหารอย่างน้อย 1 รายการ หากต้องการยกเลิกทั้งออเดอร์ กรุณาใช้ปุ่มยกเลิกออเดอร์ในหน้าสรุปออเดอร์",
+        );
+      }
+      return;
+    }
+
+    submitting.current = true;
+    setIsSubmitting(true);
+    setErrorMessage("");
+    setSuccessMessage("");
+
+    try {
+      const sessionToken = await getOrCreateSessionToken();
+
+      if (editingOrderId) {
+        const response = await fetch(`/api/orders/${editingOrderId}/edit`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            tableId: Number(tableId),
+            sessionToken,
+            note: orderNote.trim() || undefined,
+            items: cart.map((item) => ({
+              menuId: item.menuId,
+              quantity: item.quantity,
+              note: item.note ?? undefined,
+              optionSelections: item.optionSelections,
+            })),
+          }),
+        });
+
+        const result = (await response.json()) as {
+          message?: string;
+          error?: string;
+          details?: string;
+        };
+
+        if (!response.ok) {
+          const message = [result.error, result.details].filter(Boolean).join(": ");
+          throw new Error(message || "แก้ไขออเดอร์ไม่สำเร็จ");
+        }
+
+        if (typeof window !== "undefined") {
+          window.sessionStorage.removeItem(`smart-order-edit-draft-${tableId}`);
+        }
+
+        setCart([]);
+        pendingRequest.current = null;
+        setOrderNote("");
+        setShowCart(false);
+
+        router.push(`/table/${legacyReference}/orders?editSuccess=1`);
+        return;
+      }
+
+      const payload = JSON.stringify({
+        tableId, sessionToken, diningType, note: orderNote.trim() || undefined,
+        items: cart.map((item) => ({ menuId: item.menuId, quantity: item.quantity,
+          note: item.note ?? undefined, optionSelections: item.optionSelections })),
+      });
+      if (pendingRequest.current?.payload !== payload) {
+        pendingRequest.current = { payload, id: crypto.randomUUID(), sessionToken };
+      }
+      const response = await fetch("/api/orders", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          requestId: pendingRequest.current.id,
+          tableId,
+          sessionToken,
+          diningType,
+          note: orderNote.trim() || undefined,
+          items: cart.map((item) => ({
+            menuId: item.menuId,
+            quantity: item.quantity,
+            note: item.note ?? undefined,
+            optionSelections: item.optionSelections,
+          })),
+        }),
+      });
+
+      const result = (await response.json()) as {
+        message?: string;
+        error?: string;
+        details?: string;
+        order?: {
+          id: number;
+          order_number?: string | null;
+        };
+      };
+
+      if (!response.ok) {
+        if (response.status >= 400 && response.status < 500) pendingRequest.current = null;
+        const message = [
+          result.error,
+          result.details,
+        ]
+          .filter(Boolean)
+          .join(": ");
+
+        throw new Error(
+          message || "ไม่สามารถส่งออเดอร์ได้"
+        );
+      }
+
+      const formattedNum =
+        result.order?.order_number !== undefined && result.order?.order_number !== null
+          ? formatOrderNumber(result.order.order_number)
+          : "";
+
+      setCart([]);
+      pendingRequest.current = null;
+      setOrderNote("");
+      setShowCart(false);
+
+      setSuccessMessage(
+        formattedNum && formattedNum !== "-"
+          ? `สั่งอาหารสำเร็จ เลขที่ออเดอร์ ${formattedNum}`
+          : "สั่งอาหารสำเร็จ เรียบร้อยแล้ว"
+      );
+
+      router.push(`/table/id-${tableId}/orders`);
+    } catch (error) {
+      setErrorMessage(
+        error instanceof Error
+          ? error.message
+          : "เกิดข้อผิดพลาดในการส่งออเดอร์"
+      );
+    } finally {
+      submitting.current = false;
+      setIsSubmitting(false);
+    }
+  }
+
+  return (
+    <>
+      <OptionalMembership />
+      {editingOrderId && (
+        <div
+          data-testid="edit-order-mode-banner"
+          className="mt-6 rounded-2xl border border-amber-300 bg-amber-500 p-4 text-white shadow-md sm:p-5"
+        >
+          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+            <div className="flex items-center gap-3">
+              <span className="text-2xl">✏️</span>
+              <div>
+                <p className="font-bold text-base sm:text-lg">
+                  กำลังแก้ไขออเดอร์ {formatOrderNumber(editingOrderNumber)}
+                </p>
+                <p className="text-xs sm:text-sm text-amber-100">
+                  เลือกอาหารเพิ่ม ปรับจำนวน หรือลบรายการในตะกร้าได้โดยตรง เมื่อเรียบร้อยแล้วกดตรวจรายการและบันทึกการแก้ไข
+                </p>
+              </div>
+            </div>
+            <button
+              type="button"
+              data-testid="cancel-edit-order-btn"
+              onClick={cancelEditOrder}
+              className="shrink-0 rounded-xl bg-white/20 hover:bg-white/30 px-4 py-2 text-sm font-bold text-white transition"
+            >
+              ยกเลิกการแก้ไข
+            </button>
+          </div>
+        </div>
+      )}
+
+      {successMessage && (
+        <div className="mt-6 rounded-2xl border border-green-200 bg-green-50 p-4 text-sm font-semibold text-green-700">
+          {successMessage}
+        </div>
+      )}
+
+      {errorMessage && (
+        <div className="mt-6 rounded-2xl border border-red-200 bg-red-50 p-4 text-sm font-semibold text-red-700">
+          {errorMessage}
+        </div>
+      )}
+
+      <div className="mt-6 flex flex-wrap gap-2" aria-label="หมวดอาหาร">
+        {["", ...new Set(menus.map((menu) => menu.category_name))].map((name) => <button key={name} type="button" aria-pressed={category === name} onClick={() => setCategory(name)} className={`rounded-full border px-4 py-2 font-semibold ${category === name ? "border-orange-600 bg-orange-600 text-white" : "border-zinc-300 bg-white text-zinc-700"}`}>{name || "ทั้งหมด"}</button>)}
+      </div>
+      <div className="mt-8 grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_20rem]">
+      <div className="grid gap-6 sm:grid-cols-2 xl:grid-cols-3">
+        {menus.filter((menu) => !category || menu.category_name === category).map((menu) => (
+          <article
+            key={menu.id}
+            className="overflow-hidden rounded-2xl bg-white shadow-sm transition hover:-translate-y-1 hover:shadow-md"
+          >
+            <div className="relative h-48 bg-zinc-200">
+              {menu.image_url ? (
+                <img
+                  src={menu.image_url}
+                  alt={menu.name}
+                  className="h-full w-full object-cover"
+                />
+              ) : (
+                <div className="flex h-full items-center justify-center text-sm text-zinc-400">
+                  ไม่มีรูปภาพ
+                </div>
+              )}
+
+              {!menu.can_order && (
+                <div className="absolute inset-0 flex items-center justify-center bg-black/60">
+                  <span className="rounded-full bg-red-500 px-4 py-2 text-sm font-bold text-white">
+                    วัตถุดิบไม่เพียงพอ
+                  </span>
+                </div>
+              )}
+            </div>
+
+            <div className="p-5">
+              <h3 className="text-xl font-bold text-zinc-900">
+                {menu.name}
+              </h3>
+
+              <p className="mt-2 min-h-10 text-sm text-zinc-500">
+                {menu.description ||
+                  "ไม่มีรายละเอียดเพิ่มเติม"}
+              </p>
+
+              {cart.some((item) => item.menuId === menu.id) && <p className="mt-2 rounded-lg bg-orange-50 px-3 py-2 text-sm font-semibold text-orange-700">
+                ในตะกร้า {cart.filter((item) => item.menuId === menu.id).reduce((sum, item) => sum + item.quantity, 0)} จาน
+              </p>}
+
+              <div className="mt-5 flex items-center justify-between gap-3">
+                <p className="text-xl font-bold text-orange-500">
+                  {formatPrice(menu.price)} บาท
+                </p>
+
+                <button
+                  type="button"
+                  disabled={!menu.can_order}
+                  onClick={() => openMenuOptions(menu)}
+                  className="rounded-xl bg-zinc-900 px-4 py-2 text-sm font-semibold text-white transition hover:bg-orange-500 disabled:cursor-not-allowed disabled:bg-zinc-300"
+                >
+                  {menu.can_order
+                    ? "เพิ่ม"
+                    : "สั่งไม่ได้"}
+                </button>
+              </div>
+            </div>
+          </article>
+        ))}
+      </div>
+
+      <aside aria-label="รายการในตะกร้า" className="order-first rounded-2xl border border-orange-200 bg-white p-5 shadow-sm lg:sticky lg:top-5 lg:order-last">
+        <div className="flex items-center justify-between gap-3">
+          <h3 className="text-xl font-bold text-zinc-900">
+            {editingOrderId ? "รายการที่แก้ไข" : "ตะกร้าของคุณ"}
+          </h3>
+          <span className="rounded-full bg-orange-100 px-3 py-1 text-sm font-semibold text-orange-800">{cartQuantity} จาน</span>
+        </div>
+        {cart.length === 0 ? <p className="mt-4 text-sm text-zinc-500">
+          {editingOrderId ? "ไม่มีรายการอาหาร (กรุณาเลือกอาหารอย่างน้อย 1 รายการ)" : "เลือกอาหารแล้วรายการจะแสดงตรงนี้"}
+        </p> : <>
+          <ul className="mt-4 max-h-[45vh] space-y-4 overflow-y-auto">
+            {cart.map((item) => <li key={item.cartId} className="border-b border-zinc-100 pb-4">
+              <div className="flex items-start justify-between gap-3">
+                <p className="font-semibold text-zinc-900">{item.menuName}</p>
+                <p className="shrink-0 font-semibold text-orange-600">{formatPrice(item.unitPrice * item.quantity)} บาท</p>
+              </div>
+              {item.selectedOptions.length > 0 && <p className="mt-1 text-sm text-zinc-500">{item.selectedOptions.map((option) => `${option.name} × ${option.quantity}`).join(" · ")}</p>}
+              <div className="mt-3 flex items-center justify-between gap-2">
+                <div className="flex items-center rounded-lg border border-zinc-200">
+                  <button type="button" aria-label={`ลดจำนวน ${item.menuName}`} onClick={() => decreaseCartQuantity(item.cartId)} className="h-11 w-11 hover:bg-zinc-100">−</button>
+                  <span className="min-w-6 text-center font-semibold">{item.quantity}</span>
+                  <button type="button" aria-label={`เพิ่มจำนวน ${item.menuName}`} onClick={() => increaseCartQuantity(item.cartId)} className="h-11 w-11 hover:bg-zinc-100">+</button>
+                </div>
+                <button type="button" onClick={() => editCartItem(item)} className="min-h-11 px-2 text-sm font-semibold text-orange-700">แก้ไข</button>
+                <button type="button" aria-label={`ลบ ${item.menuName}`} onClick={() => removeCartItem(item.cartId)} className="min-h-11 px-2 text-sm text-red-600">ลบ</button>
+              </div>
+            </li>)}
+          </ul>
+          <div className="mt-4 flex items-center justify-between font-bold"><span>ยอดรวม</span><span className="text-xl text-orange-600">{formatPrice(totalAmount)} บาท</span></div>
+          <button type="button" data-testid="open-cart-btn" onClick={() => { setShowCart(true); setErrorMessage(""); }} className="mt-4 min-h-12 w-full rounded-xl bg-orange-500 px-4 py-3 font-bold text-white hover:bg-orange-600">
+            {editingOrderId ? "ตรวจรายการและบันทึกการแก้ไข" : "ตรวจรายการและสั่งอาหาร"}
+          </button>
+        </>}
+      </aside>
+      </div>
+
+      {cart.length > 0 && (
+        <div className={`fixed inset-x-0 bottom-0 z-30 border-t ${
+          editingOrderId
+            ? "border-amber-300 bg-amber-600 text-white"
+            : "border-zinc-200 bg-white/95 text-zinc-900"
+        } px-5 py-4 shadow-[0_-5px_20px_rgba(0,0,0,0.12)] backdrop-blur lg:hidden`}>
+          <div className="mx-auto flex max-w-5xl items-center justify-between gap-4">
+            <div>
+              <p className={`max-w-[55vw] truncate text-sm font-semibold ${editingOrderId ? "text-white" : "text-zinc-800"}`} aria-label="อาหารในตะกร้า">{cart.map((item) => `${item.menuName} × ${item.quantity}`).join(" · ")}</p>
+              <p className={`text-sm ${editingOrderId ? "text-amber-100" : "text-zinc-500"}`}>
+                {cartQuantity} จาน · {cart.length} รายการ
+              </p>
+
+              <p className={`text-xl font-bold ${editingOrderId ? "text-white" : "text-zinc-900"}`}>
+                รวม {formatPrice(totalAmount)} บาท
+              </p>
+            </div>
+
+            <button
+              type="button"
+              data-testid="open-cart-btn-mobile"
+              onClick={() => {
+                setShowCart(true);
+                setErrorMessage("");
+              }}
+              className={`rounded-xl px-6 py-3 font-bold transition ${
+                editingOrderId
+                  ? "bg-white text-amber-900 hover:bg-amber-50"
+                  : "bg-orange-500 text-white hover:bg-orange-600"
+              }`}
+            >
+              {editingOrderId ? "ตรวจรายการ" : "ดูตะกร้า"}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {selectedMenu && (
+        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/50 sm:items-center sm:p-5">
+          <button
+            type="button"
+            aria-label="ปิดหน้าต่าง"
+            onClick={closeMenuOptions}
+            className="absolute inset-0"
+          />
+
+          <div className="relative z-10 max-h-[90vh] w-full overflow-y-auto rounded-t-3xl bg-white p-6 shadow-xl sm:max-w-lg sm:rounded-3xl">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <p className="text-sm font-semibold text-orange-500">
+                  เลือกรายละเอียด
+                </p>
+
+                <h2 className="mt-1 text-2xl font-bold text-zinc-900">
+                  {selectedMenu.name}
+                </h2>
+
+                <p className="mt-1 text-sm text-zinc-500">
+                  ราคาเริ่มต้น{" "}
+                  {formatPrice(selectedMenu.price)} บาท
+                </p>
+              </div>
+
+              <button
+                type="button"
+                onClick={closeMenuOptions}
+                className="flex h-10 w-10 items-center justify-center rounded-full bg-zinc-100 text-xl text-zinc-600"
+              >
+                ×
+              </button>
+            </div>
+
+            {selectedMenu.option_groups.map((group) => {
+              const groupSelections = group.options.filter(
+                (option) => (selectedOptionQuantities[option.id] ?? 0) > 0,
+              );
+              const groupTotalQuantity = groupSelections.reduce(
+                (total, option) =>
+                  total + (selectedOptionQuantities[option.id] ?? 0),
+                0,
+              );
+
+              return (
+              <div key={group.key} className="mt-7">
+                <div className="flex items-center gap-2">
+                  <p className="font-bold text-zinc-900">{group.name}</p>
+                  {group.is_required && (
+                    <span className="rounded-full bg-red-50 px-2 py-0.5 text-xs font-semibold text-red-600">
+                      ต้องเลือก
+                    </span>
+                  )}
+                </div>
+
+                <p className="mt-1 text-xs text-zinc-500">
+                  {group.selection_type === "single"
+                    ? "เลือกได้ 1 รายการ"
+                    : `เลือกได้ ${group.min_select}-${group.max_select} ชนิด จำนวนรวมไม่เกิน ${group.max_total_quantity}`}
+                </p>
+
+                <div className="mt-3 space-y-3">
+                  {group.options.map((option) => (
+                    <div
+                      key={option.id}
+                      className={`flex items-center justify-between gap-4 rounded-xl border p-4 ${
+                        option.is_available
+                          ? "border-zinc-200"
+                          : "border-zinc-100 bg-zinc-50 text-zinc-400"
+                      }`}
+                    >
+                      <label className="flex min-w-0 flex-1 items-center gap-3">
+                        {group.selection_type === "single" && (
+                          <input
+                            type="radio"
+                            name={`option-group-${group.key}`}
+                            checked={(selectedOptionQuantities[option.id] ?? 0) === 1}
+                            disabled={!option.is_available}
+                            onChange={() =>
+                              setSelectedOptionQuantities((current) => {
+                                const next = { ...current };
+                                for (const groupOption of group.options) {
+                                  delete next[groupOption.id];
+                                }
+                                next[option.id] = 1;
+                                return next;
+                              })
+                            }
+                            className="h-4 w-4 accent-orange-500"
+                          />
+                        )}
+                        {group.selection_type === "multiple" && (
+                          <input
+                            type="checkbox"
+                            checked={(selectedOptionQuantities[option.id] ?? 0) > 0}
+                            disabled={
+                              !option.is_available ||
+                              ((selectedOptionQuantities[option.id] ?? 0) === 0 &&
+                                (groupSelections.length >= group.max_select ||
+                                  groupTotalQuantity >= group.max_total_quantity))
+                            }
+                            onChange={(event) =>
+                              setSelectedOptionQuantities((current) => ({
+                                ...current,
+                                [option.id]: event.target.checked ? 1 : 0,
+                              }))
+                            }
+                            className="h-4 w-4 accent-orange-500"
+                          />
+                        )}
+                        <div>
+                        <span className="font-medium text-zinc-700">
+                          {option.name}
+                        </span>
+
+                        <p className="mt-1 text-sm font-semibold text-orange-500">
+                          +{formatPrice(option.additional_price)} บาทต่อชิ้น
+                        </p>
+                        {!option.is_available && (
+                          <p className="mt-1 text-xs text-red-500">วัตถุดิบไม่เพียงพอ</p>
+                        )}
+                      </div>
+                      </label>
+
+                      {group.selection_type === "multiple" && (
+                      <div className="flex items-center overflow-hidden rounded-lg border border-zinc-200">
+                        <button
+                          type="button"
+                          aria-label={`ลดจำนวน${option.name}`}
+                          onClick={() =>
+                            setSelectedOptionQuantities((current) => ({
+                              ...current,
+                              [option.id]: Math.max(
+                                0,
+                                (current[option.id] ?? 0) - 1
+                              ),
+                            }))
+                          }
+                          className="h-9 w-10 text-lg hover:bg-zinc-100"
+                        >
+                          −
+                        </button>
+
+                        <span className="flex h-9 min-w-10 items-center justify-center border-x border-zinc-200 text-sm font-bold">
+                          {selectedOptionQuantities[option.id] ?? 0}
+                        </span>
+
+                        <button
+                          type="button"
+                          aria-label={`เพิ่มจำนวน${option.name}`}
+                          disabled={
+                            !option.is_available ||
+                            groupTotalQuantity >= group.max_total_quantity ||
+                            ((selectedOptionQuantities[option.id] ?? 0) === 0 &&
+                              groupSelections.length >= group.max_select) ||
+                            (selectedOptionQuantities[option.id] ?? 0) >=
+                              Math.min(option.max_quantity, option.max_available_quantity)
+                          }
+                          onClick={() =>
+                            setSelectedOptionQuantities((current) => ({
+                              ...current,
+                              [option.id]: (current[option.id] ?? 0) + 1,
+                            }))
+                          }
+                          className="h-9 w-10 text-lg hover:bg-zinc-100 disabled:cursor-not-allowed disabled:text-zinc-300"
+                        >
+                          +
+                        </button>
+                      </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+              );
+            })}
+
+            <div className="mt-7">
+              <p className="font-bold text-zinc-900">
+                จำนวน
+              </p>
+
+              <div className="mt-3 flex w-fit items-center overflow-hidden rounded-xl border border-zinc-200">
+                <button
+                  type="button"
+                  onClick={() =>
+                    setQuantity((current) =>
+                      Math.max(1, current - 1)
+                    )
+                  }
+                  className="h-11 w-12 text-xl font-bold text-zinc-600 hover:bg-zinc-100"
+                >
+                  −
+                </button>
+
+                <span className="flex h-11 min-w-12 items-center justify-center border-x border-zinc-200 font-bold">
+                  {quantity}
+                </span>
+
+                <button
+                  type="button"
+                  onClick={() =>
+                    setQuantity((current) =>
+                      Math.min(99, current + 1)
+                    )
+                  }
+                  className="h-11 w-12 text-xl font-bold text-zinc-600 hover:bg-zinc-100"
+                >
+                  +
+                </button>
+              </div>
+            </div>
+
+            <button
+              type="button"
+              data-testid="add-to-cart-btn"
+              onClick={addToCart}
+              className="mt-8 w-full rounded-xl bg-orange-500 px-5 py-4 font-bold text-white transition hover:bg-orange-600"
+            >
+              {(editingCartId ? "บันทึกการแก้ไข" : "เพิ่มลงตะกร้า") +
+                ` · ${formatPrice(selectedUnitPrice * quantity)} บาท`}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {showCart && (
+        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/50 sm:items-center sm:p-5">
+          <button
+            type="button"
+            aria-label="ปิดตะกร้า"
+            onClick={() => setShowCart(false)}
+            className="absolute inset-0"
+          />
+
+          <div className="relative z-10 flex max-h-[90vh] w-full flex-col rounded-t-3xl bg-white shadow-xl sm:max-w-2xl sm:rounded-3xl">
+            <div className="flex items-center justify-between border-b border-zinc-200 p-6">
+              <div>
+                <h2 className="text-2xl font-bold text-zinc-900">
+                  {editingOrderId ? `แก้ไขออเดอร์ ${formatOrderNumber(editingOrderNumber)}` : "ตะกร้าอาหาร"}
+                </h2>
+
+                <p className="mt-1 text-sm text-zinc-500">
+                  โต๊ะหมายเลข {tableNumber}
+                </p>
+              </div>
+
+              <button
+                type="button"
+                aria-label="ปิดตะกร้าอาหาร"
+                onClick={() => setShowCart(false)}
+                className="flex h-10 w-10 items-center justify-center rounded-full bg-zinc-100 text-xl text-zinc-600"
+              >
+                ×
+              </button>
+            </div>
+
+            <div className="flex-1 space-y-4 overflow-y-auto p-6">
+              {cart.length === 0 ? (
+                <div className="py-12 text-center text-zinc-500">
+                  ยังไม่มีรายการในตะกร้า
+                </div>
+              ) : (
+                cart.map((item) => (
+                  <div
+                    key={item.cartId}
+                    className="rounded-2xl border border-zinc-200 p-4"
+                  >
+                    <div className="flex items-start justify-between gap-4">
+                      <div>
+                        <h3 className="font-bold text-zinc-900">
+                          {item.menuName}
+                        </h3>
+
+                        {item.selectedOptions.length > 0 && (
+                          <div className="mt-1 space-y-1 text-sm text-orange-600">
+                            {item.selectedOptions.map((option) => (
+                              <p key={option.id}>
+                                {option.group_name}: {option.name} × {option.quantity}
+                                {" +"}
+                                {formatPrice(
+                                  option.additional_price * option.quantity
+                                )}{" "}
+                                บาทต่อจาน
+                              </p>
+                            ))}
+                          </div>
+                        )}
+
+                        {item.note && <p className="mt-1 text-sm text-zinc-500">หมายเหตุ: {item.note}</p>}
+                      </div>
+
+                      <div className="flex items-center gap-3">
+                        <button
+                          type="button"
+                          onClick={() => editCartItem(item)}
+                          className="text-sm font-semibold text-orange-600"
+                        >
+                          แก้ไข
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() =>
+                            removeCartItem(item.cartId)
+                          }
+                          className="text-sm font-semibold text-red-500"
+                        >
+                          ลบ
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="mt-4 flex items-center justify-between gap-4">
+                      <div className="flex items-center overflow-hidden rounded-lg border border-zinc-200">
+                        <button
+                          type="button"
+                          onClick={() =>
+                            decreaseCartQuantity(
+                              item.cartId
+                            )
+                          }
+                          className="h-9 w-10 text-lg hover:bg-zinc-100"
+                        >
+                          −
+                        </button>
+
+                        <span className="flex h-9 min-w-10 items-center justify-center border-x border-zinc-200 text-sm font-bold">
+                          {item.quantity}
+                        </span>
+
+                        <button
+                          type="button"
+                          onClick={() =>
+                            increaseCartQuantity(
+                              item.cartId
+                            )
+                          }
+                          className="h-9 w-10 text-lg hover:bg-zinc-100"
+                        >
+                          +
+                        </button>
+                      </div>
+
+                      <p className="font-bold text-orange-500">
+                        {formatPrice(
+                          item.unitPrice *
+                            item.quantity
+                        )}{" "}
+                        บาท
+                      </p>
+                    </div>
+                  </div>
+                ))
+              )}
+
+              {cart.length > 0 && (
+                <div>
+                  <fieldset className="mb-5 rounded-xl border border-orange-200 p-4">
+                    <legend className="px-2 font-bold">รูปแบบการรับอาหารทั้งออเดอร์</legend>
+                    <div className="flex gap-6">
+                      <label><input type="radio" name="dining_type" value="dine_in" checked={diningType === "dine_in"} onChange={() => setDiningType("dine_in")} /> ทานที่ร้าน</label>
+                      <label><input type="radio" name="dining_type" value="takeaway" checked={diningType === "takeaway"} onChange={() => setDiningType("takeaway")} /> กลับบ้าน</label>
+                    </div>
+                  </fieldset>
+                  <label
+                    htmlFor="order-note"
+                    className="font-bold text-zinc-900"
+                  >
+                    หมายเหตุเพิ่มเติมทั้งออเดอร์
+                  </label>
+
+                  <textarea
+                    id="order-note"
+                    value={orderNote}
+                    onChange={(event) =>
+                      setOrderNote(
+                        event.target.value.slice(0, 500)
+                      )
+                    }
+                    rows={3}
+                    placeholder="เช่น ขอช้อนเพิ่ม หรือรายละเอียดอื่น ๆ"
+                    className="mt-3 w-full resize-none rounded-xl border border-zinc-200 p-4 text-sm outline-none transition focus:border-orange-500"
+                  />
+                </div>
+              )}
+
+              {errorMessage && (
+                <div className="rounded-xl bg-red-50 p-4 text-sm text-red-700">
+                  {errorMessage}
+                </div>
+              )}
+            </div>
+
+            {cart.length > 0 && (
+              <div className="border-t border-zinc-200 p-6">
+                <div className="mb-4 flex items-center justify-between">
+                  <span className="font-semibold text-zinc-600">
+                    ยอดรวมทั้งหมด
+                  </span>
+
+                  <span className="text-2xl font-bold text-orange-500">
+                    {formatPrice(totalAmount)} บาท
+                  </span>
+                </div>
+
+                <button
+                  type="button"
+                  data-testid="submit-order-btn"
+                  disabled={isSubmitting}
+                  onClick={submitOrder}
+                  className="w-full rounded-xl bg-orange-500 px-5 py-4 font-bold text-white transition hover:bg-orange-600 disabled:cursor-not-allowed disabled:bg-zinc-300"
+                >
+                  {isSubmitting
+                    ? (editingOrderId ? "กำลังบันทึกการแก้ไข..." : "กำลังส่งออเดอร์...")
+                    : (editingOrderId ? "ยืนยันการแก้ไขออเดอร์" : "ยืนยันการสั่งอาหาร")}
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+    </>
+  );
+}

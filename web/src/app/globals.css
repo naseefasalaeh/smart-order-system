@@ -1,26 +1,116 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --background: #fff7ed;
+  --foreground: #18181b;
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+* {
+  box-sizing: border-box;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+html {
+  scroll-behavior: smooth;
 }
 
 body {
+  margin: 0;
   background: var(--background);
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
+}
+
+button,
+input {
+  font: inherit;
+}
+
+/* ซ่อนปุ่มลูกศรขึ้นลง (Spinner Buttons) สำหรับ input type="number" ทุกหน้า */
+/* Chrome, Safari, Edge, Opera */
+input[type="number"]::-webkit-outer-spin-button,
+input[type="number"]::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+/* Firefox and standard browsers */
+input[type="number"] {
+  -moz-appearance: textfield;
+  appearance: textfield;
+}
+
+/* Print Styles for Reports */
+@page {
+  size: A4 portrait;
+  margin: 8mm 10mm 8mm 10mm;
+}
+
+@media print {
+  aside,
+  nav,
+  .no-print,
+  button:not(.print-keep),
+  input,
+  select,
+  form {
+    display: none !important;
+  }
+  body, main {
+    background: #ffffff !important;
+    color: #18181b !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    font-size: 9pt !important;
+    line-height: 1.25 !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+  section {
+    padding: 0 !important;
+    margin: 0 !important;
+  }
+  /* Remove overflow restrictions and max-height during print to allow natural multi-page pagination */
+  *,
+  *::before,
+  *::after {
+    overflow: visible !important;
+    max-height: none !important;
+  }
+  /* Let tables split cleanly across pages: header repeats on new pages, rows don't get cut in half */
+  table {
+    break-inside: auto !important;
+    page-break-inside: auto !important;
+  }
+  thead {
+    display: table-header-group !important;
+  }
+  tr {
+    break-inside: avoid !important;
+    page-break-inside: avoid !important;
+  }
+  /* Keep small cards and charts together, but never force huge multi-row containers */
+  .print-break-inside-avoid,
+  svg {
+    break-inside: avoid !important;
+    page-break-inside: avoid !important;
+  }
+  .print-page-break-before {
+    break-before: page !important;
+    page-break-before: always !important;
+  }
+  .print-page-break-after {
+    break-after: page !important;
+    page-break-after: always !important;
+  }
+  .shadow-sm, .shadow-md, .shadow-lg, .shadow-xs, .shadow {
+    box-shadow: none !important;
+  }
+  .border-zinc-200\/80, .border-zinc-200, .border-zinc-100 {
+    border-color: #e4e4e7 !important;
+  }
+  .print-chart-svg {
+    max-height: 155px !important;
+    height: 155px !important;
+    width: 100% !important;
+  }
 }

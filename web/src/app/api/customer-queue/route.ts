@@ -1,0 +1,93 @@
+import { orderDisplayStatus } from "@/lib/plate-progress";
+import { formatOrderNumber } from "@/lib/order-number";
+import { NextResponse } from "next/server";
+import { createAdminClient } from "@/lib/supabase/admin";
+
+type CustomerQueueBody = {
+  tableId?: number;
+  sessionToken?: string;
+};
+
+const queueStatuses = ["confirmed", "preparing", "ready"];
+const uuidPattern =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+function emptyResponse(status: number) {
+  return new Response(null, {
+    status,
+    headers: { "Cache-Control": "no-store" },
+  });
+}
+
+export async function POST(request: Request) {
+  let body: CustomerQueueBody;
+
+  try {
+    body = (await request.json()) as CustomerQueueBody;
+  } catch {
+    return emptyResponse(400);
+  }
+
+  const tableId = Number(body.tableId);
+  const sessionToken = String(body.sessionToken ?? "");
+
+  if (
+    !Number.isSafeInteger(tableId) ||
+    tableId <= 0 ||
+    !uuidPattern.test(sessionToken)
+  ) {
+    return emptyResponse(400);
+  }
+
+  try {
+    const supabase = createAdminClient();
+    const { data: session, error: sessionError } = await supabase
+      .from("dining_sessions")
+      .select("id")
+      .eq("access_token", sessionToken)
+      .eq("status", "active")
+      .eq("table_id", tableId)
+      .maybeSingle();
+
+    if (sessionError) {
+      return emptyResponse(500);
+    }
+
+    if (!session) {
+      return emptyResponse(401);
+    }
+
+    const { data: orders, error: ordersError } = await supabase
+      .from("orders")
+      .select("id, order_number, status, created_at, session_id,order_items(quantity,served_plates)")
+      .in("status", queueStatuses)
+      .order("created_at", { ascending: true })
+      .order("id", { ascending: true });
+
+    if (ordersError) {
+      return emptyResponse(500);
+    }
+
+    const queue = (orders ?? []).flatMap((order) => {
+      if (order.order_number === null || order.order_number === undefined) {
+        return [];
+      }
+
+      return [
+        {
+          queueNumber: formatOrderNumber(order.order_number),
+          status: String(order.status),
+          partiallyServed: orderDisplayStatus(order) === "partially_served",
+          created_at: String(order.created_at),
+          isMine: String(order.session_id) === String(session.id),
+        },
+      ];
+    });
+
+    return NextResponse.json(queue, {
+      headers: { "Cache-Control": "no-store" },
+    });
+  } catch {
+    return emptyResponse(500);
+  }
+}
