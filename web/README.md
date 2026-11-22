@@ -1,64 +1,122 @@
-# Smart Order System
+# Smart Order System (ระบบจัดการคำสั่งซื้อร้านอาหารอัจฉริยะ)
 
-ระบบสั่งอาหารด้วย Next.js และ Supabase แยกหน้าที่ Admin, Staff, Kitchen และลูกค้า
+ระบบสั่งอาหารและบริหารจัดการร้านอาหารแบบเรียลไทม์ พัฒนาด้วย **Next.js (App Router)** ร่วมกับ **Supabase (PostgreSQL, Realtime, Auth, Storage)** รองรับการทำงานแยกตามบทบาทผู้ใช้งาน ได้แก่ **ลูกค้า (Customer)**, **พนักงานในครัว (Kitchen)**, **พนักงานบริการหน้าร้าน/แคชเชียร์ (Staff)** และ **ผู้ดูแลระบบ (Admin)**
 
-## เริ่มทำงาน
+---
 
-ติดตั้ง dependencies ด้วย `npm ci` และตั้งค่า `.env.local` ในเครื่อง:
+## ฟีเจอร์หลักของระบบ (Key Features)
 
-- `NEXT_PUBLIC_SUPABASE_URL`
-- `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`
-- `SUPABASE_SERVICE_ROLE_KEY` ใช้บน server เท่านั้น ห้ามส่งไป browser หรือ commit
+1. **ฝั่งลูกค้า (Customer Interface):**
+   - สแกน QR Code เข้าสู่โต๊ะอาหาร เลือกดูเมนูอาหาร รายละเอียดตัวเลือก และสั่งอาหาร
+   - **ระบบสมาชิกแบบทันที (Instant Membership):** สมัครสมาชิกผ่านเบอร์โทรศัพท์และเข้าใช้งานได้ทันทีโดยไม่ต้องรอแอดมินอนุมัติ สะสมแต้มและบันทึกประวัติออเดอร์ในนามสมาชิก
+   - ติดตามสถานะออเดอร์รายจานแบบเรียลไทม์ (รอดำเนินการ / กำลังปรุง / พร้อมเสิร์ฟ / เสิร์ฟแล้ว)
 
-ใช้ `npm run dev` เปิดเว็บที่ http://localhost:3000 หรือ `npm run build` แล้ว `npm start` เพื่อตรวจ production build
+2. **ฝั่งห้องครัว (Kitchen Display System):**
+   - จัดการคิวทำอาหารตามลำดับมาก่อน-หลัง (FCFS) รายจาน
+   - **ระบบเสียงแจ้งเตือนออเดอร์ใหม่เข้าครัว (Kitchen Chime):** ส่งเสียงแจ้งเตือนเฉพาะตัวเมื่อมีออเดอร์ยืนยันเข้ามาใหม่ พร้อมปุ่มเปิด/ปิดเสียงและปลดล็อก Web Audio API
 
-ก่อนแก้ Next.js อ่านคู่มือเวอร์ชันที่ติดตั้งใน `node_modules/next/dist/docs/` ตาม AGENTS.md
+3. **ฝั่งพนักงานหน้าร้าน & แคชเชียร์ (Staff & Cashier):**
+   - ตรวจรับอาหารที่ปรุงเสร็จจากครัวพร้อมเสียงแจ้งเตือน "อาหารพร้อมเสิร์ฟ"
+   - **ระบบชำระเงินยืดหยุ่น (Flexible Checkout):**
+     - รองรับการจ่ายเหมาทั้งโต๊ะ หรือ **จ่ายแยกรายจาน (Split Payment)**
+     - รองรับการ **จ่ายรวมออเดอร์จากโต๊ะอื่น (Combined Table Payment)** ในบิลเดียว
+     - ระบบคำนวณเงินทอนอัตโนมัติเมื่อรับเงินสด พร้อมปุ่มลัด ฿100, ฿500, ฿1,000
+     - เคลียร์โต๊ะและปิดรอบ Dining Session อัตโนมัติเมื่อชำระเงินครบถ้วน
 
-## เส้นทางโค้ดสำหรับนำเสนอ
+4. **ฝั่งผู้ดูแลระบบ (Admin Dashboard):**
+   - จัดการเมนู หมวดหมู่ ตัวเลือก และอัปโหลดรูปภาพเมนู
+   - จัดการสต็อกวัตถุดิบ ตัดสต็อกอัตโนมัติ และปุ่ม **เติมสต็อกด่วน (Quick Stock Refill)**
+   - จัดการสมาชิก รายชื่อ ประวัติการสั่งซื้อ และ Dashboard สถิติการตลาด
+   - **รายงานยอดขายและการวิเคราะห์ (Reports & Analytics):**
+     - กรองช่วงเวลาได้ 5 รูปแบบ (วันนี้, สัปดาห์นี้, เดือนนี้, ทั้งหมด, กำหนดเอง) อ้างอิงเวลาประเทศไทย (Asia/Bangkok)
+     - แสดงกราฟยอดขาย กราฟช่วงเวลาขายดี (Peak Hours) และอัตรายกเลิกบิล
+     - ส่งออกรายงานเป็นเอกสาร **PDF ขนาด A4** จัดหน้าสวยงามพร้อมพิมพ์
 
-| งาน | จุดเริ่มต้น |
-| --- | --- |
-| ลูกค้าเลือกอาหารและตะกร้า | src/app/table/[tableId]/MenuClient.tsx |
-| ตรวจคำสั่งซื้อ ราคา ตัวเลือก และส่ง transaction | src/app/api/orders/route.ts |
-| อ่านเมนูและตัวเลือกที่ขายได้ | src/lib/customer-menu-catalog.ts |
-| ตรวจตัวตนและสิทธิ์แต่ละหน้า | src/lib/dashboard-auth.ts และ src/lib/supabase/verified-profile.ts |
-| ครัวเริ่มงานตาม FCFS และทำเสร็จรายจาน | src/app/dashboard/kitchen/ และ src/components/kitchen-plates.tsx |
-| พร้อมเสิร์ฟและส่งมอบรายจาน | src/app/dashboard/ready/ และ src/components/serve-plate-button.tsx |
-| รับเงินสด/QR ต่อบิล | src/app/dashboard/orders/payments-view.tsx และ src/components/update-order-status-button.tsx |
-| คำนวณสถานะรายจาน | src/lib/plate-progress.ts |
-| Realtime และ polling สำรอง | src/components/order-realtime-refresh.tsx และ src/components/customer-order-events.ts |
-| ตั้งค่ารีเซ็ตสต็อก | src/lib/ingredient-reset.ts และ [รายละเอียด](docs/ingredient-stock-reset.md) |
-| Transaction, RPC, RLS และ trigger | supabase/migrations/ |
+---
 
-ลูกค้าส่งคำสั่งซื้อผ่าน API ให้ server ตรวจข้อมูลก่อนเรียก transaction ในฐานข้อมูล หน้าพนักงานใช้ session ของผู้ใช้และ RPC ที่ตรวจบทบาทอีกชั้นหนึ่ง ฐานข้อมูลบังคับ FCFS การตัด/คืนสต็อก การทำเสร็จ–เสิร์ฟรายจาน และการรับชำระเงิน หน้าจอใช้ Realtime ร่วมกับ polling เพื่อโหลดสถานะล่าสุด
+## ข้อกำหนดของระบบ (Prerequisites)
 
-Admin จัดการข้อมูลร้านและรายงาน, Kitchen ทำอาหาร, Staff เสิร์ฟและรับเงิน สิทธิ์อ้างอิง profile ที่ active และ RLS/RPC เดิม
+- **Node.js**: เวอร์ชัน 20.x ขึ้นไป
+- **npm**: เวอร์ชัน 10.x ขึ้นไป
+- **Supabase Project**: บัญชีและฐานข้อมูล Supabase สำหรับรันโปรเจกต์
 
-## ตรวจงาน
+---
 
-ฟีเจอร์เสียงพร้อมเสิร์ฟ การชำระบางรายการ/รวมรอบโต๊ะ และสมาชิกสมัครใจ: อ่าน [โครงสร้าง ผล PostgreSQL/hosted tests วิธีเปิดใช้และ rollback](docs/ready-payments-members.md) ฐาน Supabase apply migrations ของฟีเจอร์แล้ว แต่เว็บยังไม่ deploy production ห้าม apply migrations ซ้ำ
+## ขั้นตอนการติดตั้งและเริ่มต้นใช้งาน (Getting Started)
 
-- `npm run lint`
-- `npx --no-install tsc --noEmit`
-- `node --test tests/*.test.mjs`
-- `npm run build`
+### 1. ติดตั้ง Dependencies
+เปิด Terminal ในโฟลเดอร์ `web` แล้วรัน:
+```bash
+npm install
+```
 
-Browser fixture tests ใช้ HTTP/WebSocket จำลองและ Microsoft Edge แบบ headless ให้รันทีละคำสั่งเพราะใช้ port 4400/4401 ร่วมกัน:
+### 2. ตั้งค่า Environment Variables
+คัดลอกไฟล์ `.env.example` เป็น `.env.local`:
+```bash
+cp .env.example .env.local
+```
+จากนั้นแก้ไขไฟล์ `.env.local` โดยระบุค่าเชื่อมต่อจริงจาก Supabase Dashboard (Project Settings > API):
+```env
+NEXT_PUBLIC_SUPABASE_URL=https://your-project.supabase.co
+NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=your-supabase-anon-or-publishable-key
+SUPABASE_SERVICE_ROLE_KEY=your-supabase-service-role-secret-key
+```
 
-- `node tests/browser-customer-cart.mjs`
-- `node tests/browser-served-orders.mjs`
-- `node tests/browser-role-isolation.mjs`
-- `node tests/browser-dashboard-roles-live.mjs`
-- ฟอร์มสต็อก: ตั้ง `$env:ORDER_BROWSER_SUITE = 'stock-reset'` แล้วรัน browser-served-orders จากนั้น `Remove-Item Env:ORDER_BROWSER_SUITE`
+### 3. รันระบบสำหรับพัฒนา (Development Mode)
+```bash
+npm run dev
+```
+เปิดเบราว์เซอร์เข้าใช้งานที่: [http://localhost:3000](http://localhost:3000)
 
-ชื่อไฟล์ที่มี live ไม่ได้แปลว่าแตะ production ทุกไฟล์ ต้องอ่านหัวไฟล์ก่อนรัน ชุด hosted บางชุดสร้างผู้ใช้และออเดอร์จริง ต้องสำรองและตรวจขอบเขตก่อนใช้
+### 4. ตรวจสอบคุณภาพโค้ด (Lint & Typecheck)
+```bash
+# ตรวจสอบ TypeScript Types ทั้งหมด
+npx tsc --noEmit
 
-## สำรองและแก้ฐานข้อมูล
+# ตรวจสอบรูปแบบโค้ดด้วย ESLint
+npm run lint
+```
 
-`node scripts/catalog-backup.mjs` อ่านทุกตาราง/view ที่ service role เข้าถึงผ่าน PostgREST เก็บ JSON, OpenAPI และ SHA-256 ใน .test-artifacts/ ที่ Git ignore ไม่รวม Auth, Storage หรือ schema ที่ไม่เปิดผ่าน PostgREST และไม่ใช่ full SQL dump
+### 5. Build สำหรับ Production
+```bash
+npm run build
+npm start
+```
 
-supabase/audit-clean-code.sql อ่านนิยาม functions, policies, triggers, constraints, views, grants และ migration history เก็บผลนอก Git เพราะนิยาม function อาจมีข้อมูลอ่อนไหว
+---
 
-ทุกการแก้ฐานข้อมูลใช้ migration ใหม่พร้อม rollback ห้ามแก้ migration เก่าหรือ reset ฐานจริง ดู [บันทึกตรวจ Clean Code](docs/clean-code-review.md)
+## โครงสร้างโปรเจกต์ (Project Structure)
 
-ทดสอบ Realtime recovery กับ Supabase จริงด้วย `node tests/hosted-clean-code.mjs --realtime` สคริปต์สร้าง/ล้างเฉพาะ TEST resources และตรวจข้อมูลเดิมก่อน–หลัง จึงต้องอ่านขอบเขตก่อนรัน ดู [ผล Realtime ล่าสุด รายการที่ลบจริง และวิธีคืนโค้ด/ฐานข้อมูล](docs/realtime-recovery-and-restore.md)
+```text
+web/
+├── .env.example                 # ตัวอย่างตัวแปรสภาพแวดล้อม
+├── public/                      # ไฟล์ Static Assets และรูปภาพอัปโหลด
+├── src/
+│   ├── app/                     # Next.js App Router
+│   │   ├── api/                 # Backend API Routes (orders, membership, upload, etc.)
+│   │   ├── dashboard/           # หน้าจอผู้ดูแลระบบ, ครัว, พนักงาน, ชำระเงิน, รายงาน
+│   │   │   ├── ingredients/     # จัดการวัตถุดิบและสต็อก
+│   │   │   ├── kitchen/         # หน้าจอคิวครัว (KDS)
+│   │   │   ├── members/         # จัดการสมาชิกและสถิติการตลาด
+│   │   │   ├── menus/           # จัดการเมนูอาหาร
+│   │   │   ├── orders/          # รายการออเดอร์และหน้าชำระเงิน
+│   │   │   ├── ready/           # รายการอาหารพร้อมเสิร์ฟ
+│   │   │   └── reports/         # รายงานยอดขายและส่งออก PDF
+│   │   └── table/[tableId]/     # หน้าจอสั่งอาหารสำหรับลูกค้าประจำโต๊ะ
+│   ├── components/              # React UI Components
+│   └── lib/                     # ฟังก์ชันช่วยเหลือและ Supabase Clients
+└── supabase/
+    ├── migrations/              # Database Migrations (SQL)
+    └── rollback/                # SQL สำหรับย้อนกลับ Migrations
+```
+
+---
+
+## สิทธิ์และบทบาทผู้ใช้งาน (User Roles)
+
+| บทบาท (Role) | สิทธิ์การเข้าถึง | หน้าจอหลัก |
+|---|---|---|
+| **Admin** | จัดการทุกส่วนของร้าน, เมนู, วัตถุดิบ, สมาชิก, รายงาน | `/dashboard` |
+| **Kitchen Staff** | ดูคิวทำอาหาร, อัปเดตสถานะทำอาหารรายจาน (FCFS) | `/dashboard/kitchen` |
+| **Staff** | ดูอาหารพร้อมเสิร์ฟ, จัดการออเดอร์, รับชำระเงิน | `/dashboard/ready`, `/dashboard/orders` |
+| **Customer** | ดูเมนู, สั่งอาหาร, สมัคร/สะสมแต้มสมาชิก, ดูสถานะอาหาร | `/table/[tableId]` |

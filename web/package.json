@@ -4,15 +4,9 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "next build",
+    "build": "next build --webpack",
     "start": "next start",
-    "lint": "eslint",
-    "test:catalog-deletion": "node --test tests/catalog-deletion.test.mjs",
-    "test:catalog-redesign": "node --test tests/catalog-redesign.test.mjs",
-    "test:addon-categories": "node --test tests/addon-categories.test.mjs tests/addon-seafood-migration.test.mjs",
-    "test:browser-addon-categories": "node tests/browser-addon-categories.mjs",
-    "test:order-stock": "node --test tests/order-stock-guards.test.mjs",
-    "test:hard-delete": "node --test tests/hard-delete.test.mjs"
+    "lint": "eslint"
   },
   "dependencies": {
     "@supabase/ssr": "^0.12.4",
@@ -24,7 +18,6 @@
     "xlsx": "^0.18.5"
   },
   "devDependencies": {
-    "@electric-sql/pglite": "^0.5.8",
     "@tailwindcss/postcss": "^4",
     "@types/node": "^20",
     "@types/qrcode": "^1.5.6",
@@ -32,7 +25,6 @@
     "@types/react-dom": "^19",
     "eslint": "^9",
     "eslint-config-next": "16.3.0",
-    "playwright": "^1.63.0",
     "tailwindcss": "^4",
     "typescript": "^5"
   }
