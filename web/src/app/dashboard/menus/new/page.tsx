@@ -7,6 +7,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { requireDashboardContext, requireDashboardRole } from "@/lib/dashboard-auth";
 import NewMenuRecipe from "@/components/new-menu-recipe";
+import MenuImageUploader from "@/components/menu-image-uploader";
 
 export default async function NewMenuPage({
   searchParams,
@@ -204,26 +205,7 @@ export default async function NewMenuPage({
                 />
               </div>
 
-              <div>
-                <label
-                  htmlFor="image_url"
-                  className="mb-2 block font-semibold text-zinc-700"
-                >
-                  URL รูปภาพ
-                </label>
-
-                <input
-                  id="image_url"
-                  name="image_url"
-                  type="url"
-                  placeholder="https://example.com/image.jpg"
-                  className="w-full rounded-xl border border-zinc-300 px-4 py-3 text-zinc-900 outline-none focus:border-orange-500 focus:ring-2 focus:ring-orange-100"
-                />
-
-                <p className="mt-2 text-sm text-zinc-500">
-                  ยังไม่ใส่รูปภาพก็ได้ ช่องนี้ไม่บังคับ
-                </p>
-              </div>
+              <MenuImageUploader initialImageUrl={null} />
 
               {ingredientsResult.error ? <p role="alert">โหลดวัตถุดิบไม่สำเร็จ กรุณาลองใหม่</p> : <NewMenuRecipe ingredients={(ingredientsResult.data ?? []).map((item) => ({ ...item, ingredient_categories: Array.isArray(item.ingredient_categories) ? item.ingredient_categories[0] ?? null : item.ingredient_categories }))} />}
               <h2 className="text-xl font-bold">3. ตัวเลือกเนื้อสัตว์ · 4. Add-on ที่ใช้กับเมนู</h2>

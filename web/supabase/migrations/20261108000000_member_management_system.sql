@@ -490,7 +490,7 @@ begin
       m.age_range,
       m.promotion_consent,
       m.created_at,
-      count(o.id)::bigint as order_count,
+      count(case when o.status = 'completed' then 1 end)::bigint as order_count,
       coalesce(sum(case when o.status = 'completed' then o.total_amount else 0 end), 0)::numeric as total_spent
     from public.members m
     left join public.orders o on o.member_id = m.id
@@ -519,10 +519,10 @@ begin
 
   select to_jsonb(row) into v_result from (
     select m.id, m.member_code, m.phone, m.gender, m.age_range, m.promotion_consent, m.created_at,
-           count(distinct o.id) as order_count,
+           count(distinct case when o.status = 'completed' then o.id end) as order_count,
            coalesce(sum(case when o.status = 'completed' then o.total_amount else 0 end), 0) as total_spent,
            (select count(*) from public.member_devices d where d.member_id = m.id and d.active) as device_count,
-           max(o.created_at) as last_order_at
+           max(case when o.status = 'completed' then o.created_at end) as last_order_at
     from public.members m
     left join public.orders o on o.member_id = m.id
     where m.id = p_member_id
@@ -593,9 +593,10 @@ begin
   end if;
 
   select count(*) into v_total_members from public.members;
-  select count(o.id), coalesce(sum(case when o.status='completed' then o.total_amount else 0 end), 0)
+  select count(o.id), coalesce(sum(o.total_amount), 0)
     into v_total_orders, v_total_spent
-    from public.orders o where o.member_id is not null;
+    from public.orders o
+    where o.member_id is not null and o.status = 'completed';
 
   -- New members monthly for past 12 months (in Bangkok time)
   select coalesce(jsonb_agg(jsonb_build_object('month', m_series.month_str, 'count', coalesce(counts.cnt, 0))), '[]'::jsonb)

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useRef, useState } from "react";
 import { formatOrderNumber } from "@/lib/order-number";
 import {
   formatThaiPhone,
@@ -8,6 +8,7 @@ import {
   memberAges,
   memberGenderLabels,
   memberGenders,
+  validateMemberPassword,
   type MemberAge,
   type MemberGender,
 } from "@/lib/member-input";
@@ -83,7 +84,7 @@ function formatThaiDateTime(isoString: string): string {
 }
 
 export default function OptionalMembership() {
-  const [state, setState] = useState<"guest" | "pending" | "member">("guest");
+  const [state, setState] = useState<"guest" | "member">("guest");
   const [member, setMember] = useState<MemberData | null>(null);
   const [activeTab, setActiveTab] = useState<"register" | "login">("register");
 
@@ -112,8 +113,8 @@ export default function OptionalMembership() {
       const response = await fetch("/api/membership", { cache: "no-store" });
       if (!response.ok) return;
       const data = await response.json();
-      setState(data.state);
-      if (data.member) {
+      setState(data.state === "member" ? "member" : "guest");
+      if (data.member && data.state === "member") {
         setMember(data.member);
         setEditGender(data.member.gender || "unspecified");
         setEditAge(data.member.age || "unspecified");
@@ -125,15 +126,6 @@ export default function OptionalMembership() {
       /* Membership is optional; ordering remains available. */
     }
   }
-
-  // Auto poll status if in pending state so when admin approves, user screen turns active automatically!
-  useEffect(() => {
-    if (state !== "pending") return;
-    const interval = setInterval(() => {
-      void refresh();
-    }, 4000);
-    return () => clearInterval(interval);
-  }, [state]);
 
   async function fetchOrders() {
     setLoadingOrders(true);
@@ -175,6 +167,14 @@ export default function OptionalMembership() {
 
     const form = new FormData(event.currentTarget);
     const formPhone = String(form.get("phone") ?? "");
+    const rawPassword = String(form.get("password") ?? "").trim();
+    const passCheck = validateMemberPassword(rawPassword);
+    if (!passCheck.valid) {
+      setMessage(passCheck.error || "รหัสผ่านไม่ถูกต้อง");
+      setMessageType("error");
+      setPending(false);
+      return;
+    }
     try {
       const response = await fetch("/api/membership", {
         method: "POST",
@@ -192,7 +192,7 @@ export default function OptionalMembership() {
       const result = await response.json();
       if (response.ok) {
         setDuplicatePhone(null);
-        setMessage(result.message || "ส่งคำขอสมัครสมาชิกแล้ว");
+        setMessage(result.message || "สมัครสมาชิกสำเร็จ");
         setMessageType("success");
         await refresh();
       } else {
@@ -346,8 +346,6 @@ export default function OptionalMembership() {
                     {member.memberCode}
                   </span>
                 </>
-              ) : state === "pending" ? (
-                <span className="text-amber-800">คำขอสมาชิกรอแอดมินยืนยัน</span>
               ) : (
                 <span>ระบบสมาชิก Smart Order</span>
               )}
@@ -355,8 +353,6 @@ export default function OptionalMembership() {
             <span className="mt-0.5 block text-sm text-zinc-600">
               {state === "member"
                 ? "เป็นสมาชิกแล้ว · สั่งอาหารสะสมประวัติอัตโนมัติ"
-                : state === "pending"
-                ? "พนักงานจะกดยืนยันให้ในระบบ คุณสามารถสั่งอาหารต่อได้เลย"
                 : "สมัครฟรี! เพื่อดูประวัติการสั่งซื้อ จัดการข้อมูลส่วนตัว และรับสิทธิพิเศษจากทางร้าน"}
             </span>
           </div>
@@ -652,56 +648,7 @@ export default function OptionalMembership() {
         )}
 
         {/* =====================================================================
-            STATE 2: PENDING APPROVAL (รอแอดมินยืนยัน)
-           ===================================================================== */}
-        {state === "pending" && (
-          <div className="rounded-2xl border border-amber-200 bg-gradient-to-r from-amber-50 to-orange-50 p-5 text-zinc-800">
-            <div className="flex items-start gap-4">
-              <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-amber-500 text-xl text-white shadow-xs">
-                ⏳
-              </span>
-              <div className="flex-1 space-y-2">
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <h3 className="font-bold text-amber-950">ส่งคำขอสมัครสมาชิกแล้ว (รอแอดมินยืนยัน)</h3>
-                  <span className="rounded-full bg-amber-200/80 px-2.5 py-0.5 text-xs font-bold text-amber-900">
-                    รอการยืนยัน
-                  </span>
-                </div>
-
-                <p className="text-sm leading-6 text-zinc-600">
-                  ระบบได้บันทึกข้อมูลเบอร์โทรศัพท์ <span className="font-mono font-bold text-zinc-900">{formatThaiPhone(member?.phone)}</span> เรียบร้อยแล้ว 
-                  พนักงานหรือแอดมินของร้านจะกดยืนยันให้ในระบบสักครู่ครับ
-                </p>
-
-                <div className="rounded-xl border border-amber-200/60 bg-white/80 p-3 text-xs text-zinc-600">
-                  <span className="font-semibold text-zinc-800">💡 คุณสามารถเริ่มสั่งอาหารได้ทันทีตามปกติ:</span> เมื่อแอดมินกดยืนยันแล้ว บัตรสมาชิกจะเปิดใช้งานและออเดอร์จะบันทึกเข้าประวัติสะสมให้อัตโนมัติ
-                </div>
-
-                <div className="flex flex-wrap items-center gap-3 pt-2">
-                  <button
-                    type="button"
-                    onClick={() => void refresh()}
-                    className="flex items-center gap-1.5 rounded-xl bg-amber-600 px-4 py-2 text-xs font-bold text-white shadow-xs transition hover:bg-amber-700"
-                  >
-                    <span>🔄 ตรวจสถานะอีกครั้ง</span>
-                  </button>
-
-                  <button
-                    type="button"
-                    disabled={pending}
-                    onClick={() => void handleLogout()}
-                    className="text-xs font-semibold text-zinc-500 underline hover:text-zinc-700"
-                  >
-                    ยกเลิกคำขอ / เปลี่ยนเบอร์
-                  </button>
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* =====================================================================
-            STATE 3: GUEST (สมัครสมาชิก / เข้าสู่ระบบด้วยเบอร์โทร)
+            STATE 2: GUEST (สมัครสมาชิก / เข้าสู่ระบบด้วยเบอร์โทร)
            ===================================================================== */}
         {state === "guest" && (
           <div>
@@ -773,13 +720,14 @@ export default function OptionalMembership() {
                     <input
                       name="password"
                       type="password"
-                      minLength={4}
-                      maxLength={30}
+                      minLength={6}
+                      maxLength={6}
+                      pattern="[A-Za-z0-9]{6}"
                       required
-                      placeholder="เช่น PIN 4-6 หลัก หรือรหัสผ่านจำง่าย"
-                      className="min-h-12 rounded-xl border border-zinc-300 bg-white px-3 font-normal outline-none transition placeholder:text-zinc-400 focus:border-orange-500 focus:ring-4 focus:ring-orange-100"
+                      placeholder="เช่น A1b2C3 (6 ตัวอักษร)"
+                      className="min-h-12 rounded-xl border border-zinc-300 bg-white px-3 font-mono outline-none transition placeholder:text-zinc-400 focus:border-orange-500 focus:ring-4 focus:ring-orange-100"
                     />
-                    <span className="text-xs text-zinc-500">ใช้สำหรับเข้าสู่ระบบในครั้งถัดไปอย่างปลอดภัย</span>
+                    <span className="text-xs text-zinc-500">ตั้งรหัสผ่าน 6 ตัวอักษร (ใช้ได้เฉพาะภาษาอังกฤษ A-Z และตัวเลข 0-9)</span>
                   </label>
 
                   <label className="grid gap-1.5 text-sm font-semibold text-zinc-800">

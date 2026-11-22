@@ -766,7 +766,7 @@ export function BestSellingSection({
   const displayedTableMenus = showAll ? menus : menus.slice(0, maxDisplay);
 
   return (
-    <section className="mt-6 rounded-2xl border border-zinc-200/80 bg-white p-6 shadow-sm print-break-inside-avoid print:p-2.5 print:rounded-xl print:mt-1">
+    <section className="mt-6 rounded-2xl border border-zinc-200/80 bg-white p-6 shadow-sm print:break-inside-auto print:p-2.5 print:rounded-xl print:mt-1">
       <div className="flex flex-wrap items-center justify-between gap-2 border-b border-zinc-100 pb-4 print:pb-1.5">
         <div>
           <span className="rounded-md bg-orange-100 px-2.5 py-0.5 text-xs font-bold text-orange-700 print:text-[8pt] print:py-0">
@@ -785,7 +785,7 @@ export function BestSellingSection({
       </div>
 
       {/* 3.6 Horizontal Bar Chart for Top 5 Menus */}
-      <div className="mt-5 rounded-xl bg-orange-50/50 border border-orange-100 p-4 print:bg-white print:mt-1.5 print:p-2 print:border-zinc-200 print:rounded-lg">
+      <div className="mt-5 rounded-xl bg-orange-50/50 border border-orange-100 p-4 print:bg-white print:mt-1.5 print:p-2 print:border-zinc-200 print:rounded-lg print:break-inside-avoid">
         <h4 className="text-sm font-bold text-zinc-800 mb-3 flex items-center gap-1.5 print:mb-1.5 print:text-xs">
           <span>📊</span>
           <span>กราฟแท่งแนวนอน 5 อันดับแรก (Top 5 Best Sellers)</span>
@@ -830,8 +830,8 @@ export function BestSellingSection({
         </div>
       </div>
 
-      {/* Detailed Table */}
-      <div className="mt-6 overflow-x-auto print:mt-2">
+      {/* Detailed Table (Web view respects pagination/maxDisplay, Print view shows all items) */}
+      <div className="mt-6 overflow-x-auto print:mt-2 print:overflow-visible">
         <table className="w-full text-left text-sm print:text-xs">
           <thead>
             <tr className="border-b border-zinc-200 text-xs font-semibold text-zinc-500 print:text-[8pt]">
@@ -842,15 +842,16 @@ export function BestSellingSection({
               <th className="py-2.5 px-3 w-36 print:py-1 print:px-1.5 print:w-28">สัดส่วน</th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-zinc-100">
+          {/* Web View Table Body */}
+          <tbody className="divide-y divide-zinc-100 print:hidden">
             {displayedTableMenus.map((menu, index) => {
               const isTop3 = index < 3;
               const ratio = (menu.quantity / maxQty) * 100;
               return (
                 <tr key={menu.name} className="hover:bg-orange-50/40 transition">
-                  <td className="py-2.5 px-3 text-center print:py-1 print:px-1.5">
+                  <td className="py-2.5 px-3 text-center">
                     <span
-                      className={`inline-flex h-6 w-6 items-center justify-center rounded-full text-xs font-bold print:h-4 print:w-4 print:text-[7pt] ${
+                      className={`inline-flex h-6 w-6 items-center justify-center rounded-full text-xs font-bold ${
                         index === 0
                           ? "bg-amber-400 text-amber-950"
                           : index === 1
@@ -863,20 +864,66 @@ export function BestSellingSection({
                       {index + 1}
                     </span>
                   </td>
-                  <td className="py-2.5 px-3 print:py-1 print:px-1.5">
+                  <td className="py-2.5 px-3">
                     <span className={`font-semibold ${isTop3 ? "text-zinc-900 font-bold" : "text-zinc-800"}`}>
                       {menu.name}
                     </span>
                   </td>
-                  <td className="py-2.5 px-3 text-right font-bold text-zinc-900 print:py-1 print:px-1.5 print:text-[8.5pt]">
+                  <td className="py-2.5 px-3 text-right font-bold text-zinc-900">
                     {menu.quantity.toLocaleString("th-TH")}{" "}
-                    <span className="text-xs font-normal text-zinc-500 print:text-[7.5pt]">จาน</span>
+                    <span className="text-xs font-normal text-zinc-500">จาน</span>
                   </td>
-                  <td className="py-2.5 px-3 text-right font-extrabold text-orange-600 print:py-1 print:px-1.5 print:text-[8.5pt]">
+                  <td className="py-2.5 px-3 text-right font-extrabold text-orange-600">
                     {money(menu.revenue)}
                   </td>
-                  <td className="py-2.5 px-3 print:py-1 print:px-1.5">
-                    <div className="h-2 w-full overflow-hidden rounded-full bg-zinc-100 print:h-1.5">
+                  <td className="py-2.5 px-3">
+                    <div className="h-2 w-full overflow-hidden rounded-full bg-zinc-100">
+                      <div
+                        className="h-full rounded-full bg-orange-500"
+                        style={{ width: `${ratio}%` }}
+                      />
+                    </div>
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+          {/* Print View Table Body (Shows 100% of menus, no slicing) */}
+          <tbody className="divide-y divide-zinc-100 hidden print:table-row-group">
+            {menus.map((menu, index) => {
+              const isTop3 = index < 3;
+              const ratio = (menu.quantity / maxQty) * 100;
+              return (
+                <tr key={`print-${menu.name}`} className="print:break-inside-avoid">
+                  <td className="py-1 px-1.5 text-center">
+                    <span
+                      className={`inline-flex h-4 w-4 items-center justify-center rounded-full text-[7pt] font-bold ${
+                        index === 0
+                          ? "bg-amber-400 text-amber-950"
+                          : index === 1
+                          ? "bg-zinc-300 text-zinc-900"
+                          : index === 2
+                          ? "bg-amber-600 text-white"
+                          : "bg-zinc-100 text-zinc-600"
+                      }`}
+                    >
+                      {index + 1}
+                    </span>
+                  </td>
+                  <td className="py-1 px-1.5">
+                    <span className={`font-semibold ${isTop3 ? "text-zinc-900 font-bold" : "text-zinc-800"}`}>
+                      {menu.name}
+                    </span>
+                  </td>
+                  <td className="py-1 px-1.5 text-right font-bold text-zinc-900 text-[8.5pt]">
+                    {menu.quantity.toLocaleString("th-TH")}{" "}
+                    <span className="text-[7.5pt] font-normal text-zinc-500">จาน</span>
+                  </td>
+                  <td className="py-1 px-1.5 text-right font-extrabold text-orange-600 text-[8.5pt]">
+                    {money(menu.revenue)}
+                  </td>
+                  <td className="py-1 px-1.5">
+                    <div className="h-1.5 w-full overflow-hidden rounded-full bg-zinc-100">
                       <div
                         className="h-full rounded-full bg-orange-500"
                         style={{ width: `${ratio}%` }}
@@ -929,9 +976,10 @@ export function DemographicsSection({
   });
 
   const totalQuantity = filtered.reduce((sum, r) => sum + Number(r.quantity || 0), 0);
+  const totalAllQuantity = data.reduce((sum, r) => sum + Number(r.quantity || 0), 0);
 
   return (
-    <section className="mt-6 mb-6 rounded-2xl border border-zinc-200/80 bg-white p-6 shadow-sm print-break-inside-avoid print:p-2.5 print:mt-1 print:mb-0 print:rounded-xl">
+    <section className="mt-6 mb-6 rounded-2xl border border-zinc-200/80 bg-white p-6 shadow-sm print:break-inside-auto print:p-2.5 print:mt-1 print:mb-0 print:rounded-xl">
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-zinc-100 pb-4 print:pb-1.5">
         <div>
           <span className="rounded-md bg-purple-100 px-2.5 py-0.5 text-xs font-bold text-purple-700 print:text-[8pt] print:py-0">
@@ -945,7 +993,7 @@ export function DemographicsSection({
           </p>
         </div>
         <div className="text-right text-xs font-semibold text-zinc-600 print:text-[8pt]">
-          <span>รวม {totalQuantity.toLocaleString("th-TH")} จาน (Dishes)</span>
+          <span>รวม <span className="no-print">{totalQuantity.toLocaleString("th-TH")}</span><span className="hidden print:inline">{totalAllQuantity.toLocaleString("th-TH")}</span> จาน (Dishes)</span>
         </div>
       </div>
 
@@ -989,12 +1037,12 @@ export function DemographicsSection({
         </div>
       </div>
 
-      {filtered.length === 0 ? (
+      {data.length === 0 ? (
         <p className="mt-4 rounded-xl border border-dashed border-zinc-300 p-8 text-center text-zinc-500">
           ไม่มีข้อมูลตามเงื่อนไขที่เลือก
         </p>
       ) : (
-        <div className="mt-4 overflow-x-auto">
+        <div className="mt-4 overflow-x-auto print:overflow-visible">
           <table className="w-full text-left text-sm">
             <thead>
               <tr className="border-b border-zinc-200 text-xs font-semibold text-zinc-500 print:text-[8pt]">
@@ -1005,12 +1053,13 @@ export function DemographicsSection({
                 <th className="py-2.5 px-3 text-right print:py-1 print:px-2">จำนวนจานที่สั่ง (Dishes)</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-zinc-100">
+            {/* Web View Body (Respects interactive filters) */}
+            <tbody className="divide-y divide-zinc-100 print:hidden">
               {filtered.map((row, index) => (
-                <tr key={index} className="hover:bg-zinc-50">
-                  <td className="py-2.5 px-3 print:py-1 print:px-2">
+                <tr key={`web-${index}`} className="hover:bg-zinc-50">
+                  <td className="py-2.5 px-3">
                     <span
-                      className={`inline-block rounded-md px-2 py-0.5 text-xs font-semibold print:text-[7.5pt] print:py-0 ${
+                      className={`inline-block rounded-md px-2 py-0.5 text-xs font-semibold ${
                         row.customer_group === "guest"
                           ? "bg-zinc-100 text-zinc-700"
                           : "bg-orange-100 text-orange-800"
@@ -1019,7 +1068,7 @@ export function DemographicsSection({
                       {row.customer_group === "guest" ? "ลูกค้าทั่วไป" : "สมาชิก"}
                     </span>
                   </td>
-                  <td className="py-2.5 px-3 print:py-1 print:px-2 print:text-[8.5pt]">
+                  <td className="py-2.5 px-3">
                     {
                       (
                         {
@@ -1031,7 +1080,7 @@ export function DemographicsSection({
                       )[row.gender] ?? "ไม่ระบุ"
                     }
                   </td>
-                  <td className="py-2.5 px-3 print:py-1 print:px-2 print:text-[8.5pt]">
+                  <td className="py-2.5 px-3">
                     {row.age_range === "unspecified"
                       ? "ไม่ระบุ"
                       : row.age_range === "under18"
@@ -1040,8 +1089,49 @@ export function DemographicsSection({
                       ? "55 ขึ้นไป"
                       : row.age_range}
                   </td>
-                  <td className="py-2.5 px-3 font-medium text-zinc-900 print:py-1 print:px-2 print:text-[8.5pt]">{row.menu_name}</td>
-                  <td className="py-2.5 px-3 text-right font-bold text-orange-600 print:py-1 print:px-2 print:text-[8.5pt]">{row.quantity} จาน</td>
+                  <td className="py-2.5 px-3 font-medium text-zinc-900">{row.menu_name}</td>
+                  <td className="py-2.5 px-3 text-right font-bold text-orange-600">{row.quantity} จาน</td>
+                </tr>
+              ))}
+            </tbody>
+            {/* Print View Body (Always renders 100% of data, no filter cutoffs) */}
+            <tbody className="divide-y divide-zinc-100 hidden print:table-row-group">
+              {data.map((row, index) => (
+                <tr key={`print-${index}`} className="print:break-inside-avoid">
+                  <td className="py-1 px-2">
+                    <span
+                      className={`inline-block rounded-md px-2 py-0 text-[7.5pt] font-semibold ${
+                        row.customer_group === "guest"
+                          ? "bg-zinc-100 text-zinc-700"
+                          : "bg-orange-100 text-orange-800"
+                      }`}
+                    >
+                      {row.customer_group === "guest" ? "ลูกค้าทั่วไป" : "สมาชิก"}
+                    </span>
+                  </td>
+                  <td className="py-1 px-2 text-[8.5pt]">
+                    {
+                      (
+                        {
+                          female: "หญิง",
+                          male: "ชาย",
+                          other: "อื่น ๆ",
+                          unspecified: "ไม่ระบุ",
+                        } as Record<string, string>
+                      )[row.gender] ?? "ไม่ระบุ"
+                    }
+                  </td>
+                  <td className="py-1 px-2 text-[8.5pt]">
+                    {row.age_range === "unspecified"
+                      ? "ไม่ระบุ"
+                      : row.age_range === "under18"
+                      ? "ต่ำกว่า 18"
+                      : row.age_range === "55plus"
+                      ? "55 ขึ้นไป"
+                      : row.age_range}
+                  </td>
+                  <td className="py-1 px-2 font-medium text-zinc-900 text-[8.5pt]">{row.menu_name}</td>
+                  <td className="py-1 px-2 text-right font-bold text-orange-600 text-[8.5pt]">{row.quantity} จาน</td>
                 </tr>
               ))}
             </tbody>

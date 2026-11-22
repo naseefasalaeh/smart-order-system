@@ -1,28 +1,12 @@
-import { orderDisplayStatus } from "@/lib/plate-progress";
-import Link from "next/link";
 import DashboardSidebar from "@/components/dashboard-sidebar";
 import { requireDashboardContext } from "@/lib/dashboard-auth";
-import { formatOrderCode } from "@/lib/order-number";
+import DashboardClient, {
+  type DashboardOrder,
+  type LowStockIngredient,
+  type PaymentSummary,
+} from "./DashboardClient";
 
 const paidStatuses = ["paid", "completed", "success", "successful"];
-
-const statusLabels: Record<string, string> = {
-  confirmed: "รอเริ่มทำ",
-  preparing: "กำลังทำ",
-  ready: "พร้อมเสิร์ฟ",
-  served: "เสิร์ฟแล้ว รอชำระเงิน",
-  completed: "เสร็จสิ้น",
-  cancelled: "ยกเลิก",
-};
-
-const statusColors: Record<string, string> = {
-  confirmed: "bg-blue-100 text-blue-700",
-  preparing: "bg-orange-100 text-orange-700",
-  ready: "bg-green-100 text-green-700",
-  served: "bg-amber-100 text-amber-800",
-  completed: "bg-zinc-100 text-zinc-700",
-  cancelled: "bg-red-100 text-red-700",
-};
 
 export default async function DashboardPage() {
   const { db: supabase, role, fullName } = await requireDashboardContext(["admin"]);
@@ -42,55 +26,56 @@ export default async function DashboardPage() {
 
   const [
     todayOrdersResult,
-    preparingOrdersResult,
     availableMenusResult,
     ingredientsResult,
     todayPaymentsResult,
-    recentOrdersResult,
   ] = await Promise.all([
     supabase
       .from("orders")
-      .select("*", { count: "exact", head: true })
-      .gte("created_at", startOfToday.toISOString())
-      .lt("created_at", startOfTomorrow.toISOString()),
-    supabase
-      .from("orders")
-      .select("*", { count: "exact", head: true })
-      .eq("status", "preparing"),
-    supabase
-      .from("menus")
-      .select("*", { count: "exact", head: true })
-      .eq("is_available", true),
-    supabase.from("ingredients").select("id, stock_quantity, minimum_stock"),
-    supabase
-      .from("payments")
-      .select("order_id, amount, paid_at")
-      .in("status", paidStatuses)
-      .gte("paid_at", startOfToday.toISOString())
-      .lt("paid_at", startOfTomorrow.toISOString())
-      .order("paid_at", { ascending: false }),
-    supabase
-      .from("orders")
-      .select(
-        `
+      .select(`
         id,
         order_number,
         status,
         total_amount,
+        note,
+        dining_type,
         created_at,
-        order_items(quantity,completed_plates,served_plates),
+        updated_at,
         restaurant_tables (
           table_number
+        ),
+        order_items (
+          id,
+          quantity,
+          unit_price,
+          subtotal,
+          note,
+          menu_name_snapshot,
+          completed_plates,
+          served_plates,
+          menus ( name ),
+          order_item_options ( id, option_name, quantity )
         )
-      `,
-      )
-      .order("created_at", { ascending: false })
-      .limit(5),
+      `)
+      .gte("created_at", startOfToday.toISOString())
+      .lt("created_at", startOfTomorrow.toISOString())
+      .order("created_at", { ascending: false }),
+    supabase
+      .from("menus")
+      .select("*", { count: "exact", head: true })
+      .eq("is_available", true),
+    supabase.from("ingredients").select("id, name, stock_quantity, minimum_stock, unit"),
+    supabase
+      .from("payments")
+      .select("order_id, amount, payment_method, paid_at, status")
+      .in("status", paidStatuses)
+      .gte("paid_at", startOfToday.toISOString())
+      .lt("paid_at", startOfTomorrow.toISOString())
+      .order("paid_at", { ascending: false }),
   ]);
 
   const queryErrors = [
     todayOrdersResult.error,
-    preparingOrdersResult.error,
     availableMenusResult.error,
     ingredientsResult.error,
     todayPaymentsResult.error,
@@ -103,60 +88,78 @@ export default async function DashboardPage() {
     );
   }
 
-  const lowStockIngredientCount =
-    ingredientsResult.data?.filter(
+  // กรองวัตถุดิบที่ใกล้หมด (สต็อก <= ขั้นต่ำ)
+  const lowStockIngredients: LowStockIngredient[] = (ingredientsResult.data ?? [])
+    .filter(
       (ingredient) =>
         Number(ingredient.stock_quantity) <= Number(ingredient.minimum_stock),
-    ).length ?? 0;
+    )
+    .map((ingredient) => ({
+      id: ingredient.id,
+      name: ingredient.name,
+      stock_quantity: Number(ingredient.stock_quantity),
+      minimum_stock: Number(ingredient.minimum_stock),
+      unit: ingredient.unit ?? "หน่วย",
+    }));
 
   // กันข้อมูลชำระซ้ำ โดยใช้รายการล่าสุดเพียงหนึ่งรายการต่อออเดอร์
-  const uniqueTodayPayments = new Map<string, number>();
+  const uniqueTodayPayments = new Map<string, { amount: number; method: string; paid_at: string }>();
   for (const payment of todayPaymentsResult.data ?? []) {
     if (payment.order_id && !uniqueTodayPayments.has(payment.order_id)) {
-      uniqueTodayPayments.set(payment.order_id, Number(payment.amount ?? 0));
+      uniqueTodayPayments.set(payment.order_id, {
+        amount: Number(payment.amount ?? 0),
+        method: payment.payment_method ?? "cash",
+        paid_at: payment.paid_at,
+      });
     }
   }
 
-  const todaySales = Array.from(uniqueTodayPayments.values()).reduce(
-    (sum, amount) => sum + amount,
-    0,
-  );
+  // คำนวณสรุปช่องทางการชำระเงิน (เงินสด vs QR Code)
+  let cashTotal = 0;
+  let cashCount = 0;
+  let qrTotal = 0;
+  let qrCount = 0;
 
-  const summaryCards = [
-    {
-      title: "ออเดอร์วันนี้",
-      value: String(todayOrdersResult.count ?? 0),
-      description: "รายการ",
-    },
-    {
-      title: "กำลังทำอาหาร",
-      value: String(preparingOrdersResult.count ?? 0),
-      description: "รายการ",
-    },
-    {
-      title: "เมนูที่เปิดขาย",
-      value: String(availableMenusResult.count ?? 0),
-      description: "เมนู",
-    },
-    {
-      title: "วัตถุดิบใกล้หมด",
-      value: String(lowStockIngredientCount),
-      description: "รายการ",
-    },
-    {
-      title: "ยอดขายวันนี้",
-      value: `฿${todaySales.toLocaleString("th-TH", {
-        minimumFractionDigits: 2,
-        maximumFractionDigits: 2,
-      })}`,
-      description: `${uniqueTodayPayments.size} ออเดอร์`,
-    },
-  ];
+  for (const payment of uniqueTodayPayments.values()) {
+    if (payment.method === "cash") {
+      cashTotal += payment.amount;
+      cashCount += 1;
+    } else {
+      qrTotal += payment.amount;
+      qrCount += 1;
+    }
+  }
 
-  const recentOrders = recentOrdersResult.data ?? [];
+  const rawOrders = todayOrdersResult.data ?? [];
+  const completedOrders = rawOrders.filter((o) => o.status === "completed");
+  const completedSum = completedOrders.reduce((sum, o) => sum + Number(o.total_amount ?? 0), 0);
+  const paymentSum = cashTotal + qrTotal;
+  const todaySales = Math.max(paymentSum, completedSum);
+
+  const paymentSummary: PaymentSummary = {
+    cashTotal,
+    cashCount,
+    qrTotal,
+    qrCount,
+    totalSales: todaySales,
+  };
+
+  // Map payment details into orders
+  const orders: DashboardOrder[] = rawOrders.map((order) => {
+    const payment = uniqueTodayPayments.get(order.id);
+    return {
+      ...order,
+      payment_method: payment?.method ?? (order.status === "completed" ? "เงินสด" : null),
+      paid_at: payment?.paid_at ?? null,
+      order_items: (order.order_items ?? []).map((item) => ({
+        ...item,
+        order_item_options: item.order_item_options ?? [],
+      })),
+    };
+  });
 
   return (
-    <main className="min-h-screen bg-zinc-100 lg:flex">
+    <main className="min-h-screen bg-orange-50 text-zinc-900 lg:flex">
       <DashboardSidebar role={role} fullName={fullName} activePath="/dashboard" />
 
       <section className="flex-1 p-6 sm:p-8">
@@ -171,124 +174,13 @@ export default async function DashboardPage() {
             </p>
           </header>
 
-          <div className="mt-8 grid gap-5 sm:grid-cols-2 xl:grid-cols-5">
-            {summaryCards.map((card) => (
-              <article
-                key={card.title}
-                className="rounded-2xl bg-white p-6 shadow-sm"
-              >
-                <p className="text-sm font-medium text-zinc-500">
-                  {card.title}
-                </p>
-                <div className="mt-3">
-                  <p className="break-words text-3xl font-bold text-zinc-900">
-                    {card.value}
-                  </p>
-                  <p className="mt-1 text-sm text-zinc-500">
-                    {card.description}
-                  </p>
-                </div>
-              </article>
-            ))}
-          </div>
-
-          <section className="mt-8 rounded-2xl bg-white p-6 shadow-sm">
-            <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-center">
-              <div>
-                <h3 className="text-xl font-bold text-zinc-900">
-                  ออเดอร์ล่าสุด
-                </h3>
-                <p className="mt-1 text-sm text-zinc-500">
-                  รายการอาหารที่ลูกค้าสั่งเข้ามาล่าสุด
-                </p>
-              </div>
-              <Link
-                href="/dashboard/reports"
-                className="font-semibold text-orange-500 hover:text-orange-600"
-              >
-                ดูรายงาน
-              </Link>
-            </div>
-
-            {recentOrdersResult.error ? (
-              <p className="mt-6 rounded-xl bg-red-50 p-4 text-red-600">
-                ไม่สามารถโหลดออเดอร์ล่าสุดได้:{" "}
-                {recentOrdersResult.error.message}
-              </p>
-            ) : recentOrders.length === 0 ? (
-              <div className="mt-6 rounded-xl border border-dashed border-zinc-300 p-8 text-center">
-                <p className="font-semibold text-zinc-600">ยังไม่มีออเดอร์</p>
-                <p className="mt-1 text-sm text-zinc-400">
-                  เมื่อมีลูกค้าสั่งอาหาร รายการจะแสดงบริเวณนี้
-                </p>
-              </div>
-            ) : (
-              <div className="mt-6 overflow-x-auto">
-                <table className="w-full min-w-[760px] text-left">
-                  <thead>
-                    <tr className="border-b border-zinc-200 text-sm text-zinc-500">
-                      <th className="px-3 py-3 font-semibold">ออเดอร์</th>
-                      <th className="px-3 py-3 font-semibold">โต๊ะ</th>
-                      <th className="px-3 py-3 font-semibold">วันที่และเวลา</th>
-                      <th className="px-3 py-3 font-semibold">ยอดรวม</th>
-                      <th className="px-3 py-3 font-semibold">สถานะ</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {recentOrders.map((order) => {
-                      const table = Array.isArray(order.restaurant_tables)
-                        ? order.restaurant_tables[0]
-                        : order.restaurant_tables;
-
-                      return (
-                        <tr
-                          key={order.id}
-                          className="border-b border-zinc-100 last:border-0"
-                        >
-                          <td className="px-3 py-4 font-semibold text-zinc-900">
-                            {formatOrderCode(order.order_number, order.created_at)}
-                          </td>
-                          <td className="px-3 py-4 text-zinc-700">
-                            โต๊ะ {table?.table_number ?? "-"}
-                          </td>
-                          <td className="px-3 py-4 text-sm text-zinc-500">
-                            {new Date(order.created_at).toLocaleString(
-                              "th-TH",
-                              {
-                                timeZone: "Asia/Bangkok",
-                                dateStyle: "short",
-                                timeStyle: "short",
-                              },
-                            )}
-                          </td>
-                          <td className="px-3 py-4 font-semibold text-zinc-900">
-                            ฿
-                            {Number(order.total_amount ?? 0).toLocaleString(
-                              "th-TH",
-                              {
-                                minimumFractionDigits: 2,
-                                maximumFractionDigits: 2,
-                              },
-                            )}
-                          </td>
-                          <td className="px-3 py-4">
-                            <span
-                              className={`inline-block rounded-full px-3 py-1 text-sm font-semibold ${
-                                statusColors[order.status] ??
-                                "bg-zinc-100 text-zinc-700"
-                              }`}
-                            >
-                              {orderDisplayStatus(order) === "partially_served" ? "เสิร์ฟแล้วบางส่วน" : statusLabels[order.status] ?? order.status}
-                            </span>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </section>
+          <DashboardClient
+            orders={orders}
+            availableMenusCount={availableMenusResult.count ?? 0}
+            lowStockIngredients={lowStockIngredients}
+            paymentSummary={paymentSummary}
+            todaySales={todaySales}
+          />
         </div>
       </section>
     </main>

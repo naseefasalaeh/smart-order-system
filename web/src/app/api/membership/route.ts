@@ -2,7 +2,7 @@ import { createHash, randomBytes } from "node:crypto";
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { memberAges, memberCookie, memberGenders, normalizePhone } from "@/lib/member-input";
+import { memberAges, memberCookie, memberGenders, normalizePhone, validateMemberPassword } from "@/lib/member-input";
 import { hashMemberPassword, verifyMemberPassword } from "@/lib/member-auth";
 
 export async function DELETE(request: Request) {
@@ -32,7 +32,7 @@ export async function GET() {
   const tokenHash = createHash("sha256").update(token).digest("hex");
   const admin = createAdminClient();
 
-  // Check if active approved member
+  // Check if active member
   const { data: profile, error } = await admin.rpc("get_member_profile", { p_hash: tokenHash });
   if (error) {
     return NextResponse.json({ error: "โหลดสถานะสมาชิกไม่สำเร็จ" }, { status: 503 });
@@ -57,7 +57,7 @@ export async function GET() {
     );
   }
 
-  // Check if pending approval from admin
+  // Auto-upgrade any device associated with an existing member
   const { data: dev } = await admin
     .from("member_devices")
     .select("active, members(id, member_code, phone, gender, age_range, promotion_consent, created_at)")
@@ -66,11 +66,17 @@ export async function GET() {
     .is("revoked_at", null)
     .maybeSingle();
 
-  if (dev && !dev.active && dev.members) {
+  if (dev && dev.members) {
     const memData = Array.isArray(dev.members) ? dev.members[0] : dev.members;
+    // Activate device immediately
+    await admin
+      .from("member_devices")
+      .update({ active: true, reviewed_at: new Date().toISOString() })
+      .eq("token_hash", tokenHash);
+
     return NextResponse.json(
       {
-        state: "pending",
+        state: "member",
         member: {
           id: memData?.id,
           memberCode: memData?.member_code,
@@ -147,11 +153,15 @@ export async function POST(request: Request) {
       }
 
       const m = loginData[0];
-      const isActive = Boolean(m.is_active);
+      // Ensure active device in database
+      await admin
+        .from("member_devices")
+        .update({ active: true, reviewed_at: new Date().toISOString() })
+        .eq("token_hash", tokenHash);
 
       const response = NextResponse.json({
-        state: isActive ? "member" : "pending",
-        message: isActive ? "เข้าสู่ระบบสมาชิกสำเร็จ" : "คำขอสมัครสมาชิกกำลังรอแอดมินกดยืนยัน",
+        state: "member",
+        message: "เข้าสู่ระบบสมาชิกสำเร็จ",
         member: {
           id: m.id,
           memberCode: m.member_code,
@@ -184,8 +194,9 @@ export async function POST(request: Request) {
     if (!phone) {
       return NextResponse.json({ error: "กรุณาระบุเบอร์โทรศัพท์ที่ถูกต้อง (เช่น 08X-XXX-XXXX)" }, { status: 400 });
     }
-    if (!rawPassword || rawPassword.length < 4) {
-      return NextResponse.json({ error: "กรุณากำหนดรหัสผ่านอย่างน้อย 4 หลัก (เช่น รหัส PIN หรือตัวเลข)" }, { status: 400 });
+    const passCheck = validateMemberPassword(rawPassword);
+    if (!passCheck.valid) {
+      return NextResponse.json({ error: passCheck.error }, { status: 400 });
     }
     if (
       !memberGenders.includes(gender) ||
@@ -228,13 +239,15 @@ export async function POST(request: Request) {
     }
 
     const m = enrollData[0];
-    const isActive = Boolean(m.is_active);
+    // Ensure active device in database immediately (no waiting for approval)
+    await admin
+      .from("member_devices")
+      .update({ active: true, reviewed_at: new Date().toISOString() })
+      .eq("token_hash", tokenHash);
 
     const response = NextResponse.json({
-      state: isActive ? "member" : "pending",
-      message: isActive
-        ? "สมัครสมาชิกสำเร็จ ยินดีต้อนรับสู่ระบบสมาชิก Smart Order"
-        : "ส่งคำขอสมัครสมาชิกแล้ว พนักงานหรือแอดมินจะกดยืนยันให้ในระบบสักครู่ครับ",
+      state: "member",
+      message: "สมัครสมาชิกสำเร็จ ยินดีต้อนรับสู่ระบบสมาชิก Smart Order",
       member: {
         id: m.id,
         memberCode: m.member_code,

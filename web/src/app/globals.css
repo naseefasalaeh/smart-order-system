@@ -69,8 +69,27 @@ input[type="number"] {
     padding: 0 !important;
     margin: 0 !important;
   }
+  /* Remove overflow restrictions and max-height during print to allow natural multi-page pagination */
+  *,
+  *::before,
+  *::after {
+    overflow: visible !important;
+    max-height: none !important;
+  }
+  /* Let tables split cleanly across pages: header repeats on new pages, rows don't get cut in half */
+  table {
+    break-inside: auto !important;
+    page-break-inside: auto !important;
+  }
+  thead {
+    display: table-header-group !important;
+  }
+  tr {
+    break-inside: avoid !important;
+    page-break-inside: avoid !important;
+  }
+  /* Keep small cards and charts together, but never force huge multi-row containers */
   .print-break-inside-avoid,
-  tr,
   svg {
     break-inside: avoid !important;
     page-break-inside: avoid !important;

@@ -41,6 +41,12 @@ test('member management system migration, customer flows, and admin analytics', 
     await db.exec(migration('20261109000000_member_password_reset'));
     await db.exec(rollback('20261109000000_member_password_reset'));
     await db.exec(migration('20261109000000_member_password_reset'));
+    await db.exec(migration('20261121010000_member_completed_order_stats'));
+    await db.exec(rollback('20261121010000_member_completed_order_stats'));
+    await db.exec(migration('20261121010000_member_completed_order_stats'));
+    await db.exec(migration('20261121030000_member_admin_note'));
+    await db.exec(rollback('20261121030000_member_admin_note'));
+    await db.exec(migration('20261121030000_member_admin_note'));
 
     // 3. Test Customer Registration (Phone, Password Hash, Gender, Age Range for Marketing)
     await as('service_role');
@@ -129,6 +135,16 @@ test('member management system migration, customer flows, and admin analytics', 
     assert.equal(orderDetailJson.items.length, 1);
     assert.equal(orderDetailJson.items[0].menu_name, 'ข้าวกะเพรา');
 
+    // Advance order to completed
+    await q("update orders set status='completed' where id=$1", [orderRow.id]);
+
+    // Create a second member order and cancel it to verify cancelled orders are NOT counted
+    const [cancelledOrder] = await q(
+      "select * from create_member_order(1,$1,null,120,$2::jsonb,'[]'::jsonb,'dine_in',$3,$4,$5)",
+      [randomUUID(), orderItems, randomUUID(), hash('request_fingerprint_cancelled'), hashB]
+    );
+    await q("update orders set status='cancelled' where id=$1", [cancelledOrder.id]);
+
     // 9. Test Admin Directory, Detail, Orders, and Marketing Analytics
     await as('authenticated', '00000000-0000-4000-8000-000000000091');
 
@@ -136,15 +152,24 @@ test('member management system migration, customer flows, and admin analytics', 
     assert.ok(memberList.length >= 1);
     const found = memberList.find((m) => m.member_code === memberA.member_code);
     assert.ok(found);
-    assert.equal(found.order_count, 1);
+    assert.equal(Number(found.order_count), 1, 'Only completed orders must be counted in order_count');
+    assert.equal(Number(found.total_spent), 120, 'Cancelled order total must not be summed in total_spent');
 
     const memberDetail = (await q('select admin_get_member_detail($1) as d', [memberA.id]))[0].d;
     assert.equal(memberDetail.member_code, memberA.member_code);
-    assert.equal(memberDetail.order_count, 1);
+    assert.equal(Number(memberDetail.order_count), 1, 'Member detail must only count completed orders');
+    assert.equal(Number(memberDetail.total_spent), 120, 'Member detail total_spent must only sum completed orders');
+
+    // Test Admin Note
+    await q('select admin_save_member_note($1, $2)', [memberA.id, 'ลูกค้าประจำ ชอบทานเผ็ดน้อย']);
+    const detailWithNote = (await q('select admin_get_member_detail($1) as d', [memberA.id]))[0].d;
+    assert.equal(detailWithNote.admin_note, 'ลูกค้าประจำ ชอบทานเผ็ดน้อย');
 
     // Marketing demographics in Analytics
     const analytics = (await q('select admin_member_analytics() as a'))[0].a;
     assert.ok(analytics.total_members >= 1);
+    assert.equal(Number(analytics.total_orders), 1, 'Analytics total_orders must only count completed orders');
+    assert.equal(Number(analytics.total_spent), 120, 'Analytics total_spent must only sum completed orders');
     assert.ok(Array.isArray(analytics.gender_distribution));
     assert.ok(Array.isArray(analytics.age_distribution));
     assert.ok(analytics.gender_distribution.some((g) => g.count > 0));

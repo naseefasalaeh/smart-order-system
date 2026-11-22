@@ -2,6 +2,7 @@
 import PlateProgress from "@/components/plate-progress";
 import { orderDisplayStatus } from "@/lib/plate-progress";
 import KitchenPlates from "@/components/kitchen-plates";
+import KitchenAlerts from "@/components/kitchen-alerts";
 import DashboardSidebar from "@/components/dashboard-sidebar";
 import OrderRealtimeRefresh from "@/components/order-realtime-refresh";
 import { OrderViewRefresh, OrderViewRetry, useLiveOrderView } from "@/components/live-order-view";
@@ -51,6 +52,13 @@ export default function OrdersView({ initial, userId, fullName, role }: { initia
               ตรวจสอบรายการอาหาร เริ่มทำ และแจ้งเมื่ออาหารพร้อมเสิร์ฟ
             </p>
           </header>
+
+          {/* Kitchen Sound Alert Panel */}
+          <KitchenAlerts
+            orders={orders ?? []}
+            valid={!error}
+            userId={userId}
+          />
 
           {error ? (
             <div role="alert" className="mt-8 rounded-2xl bg-red-50 p-6 text-red-700 shadow-sm">

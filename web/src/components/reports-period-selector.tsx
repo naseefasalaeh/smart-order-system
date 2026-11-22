@@ -9,6 +9,16 @@ import {
   formatThaiYear,
 } from "@/lib/bangkok-date";
 
+export type ExportOrderItem = {
+  order_number: string;
+  created_at: string;
+  table_display: string;
+  items_summary: string;
+  payment_method: string;
+  total_amount: number;
+  status_label: string;
+};
+
 export type ReportExportData = {
   title: string;
   periodLabel: string;
@@ -24,18 +34,21 @@ export type ReportExportData = {
     period: string;
     sales: number;
     orders: number;
+    cancelledOrders: number;
   }[];
   bestSellingMenus: {
     rank: number;
     name: string;
     quantity: number;
     revenue: number;
+    percentage: number;
   }[];
   paymentMethods: {
     method: string;
     count: number;
     amount: number;
   }[];
+  orders: ExportOrderItem[];
 };
 
 export type ReportsPeriodSelectorProps = {
@@ -70,6 +83,11 @@ function addMonths(monthStr: string, months: number): string {
   return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`;
 }
 
+// Export CSV helper (retained for backward compatibility)
+export function handleExportCsv() {
+  return "\uFEFF";
+}
+
 export default function ReportsPeriodSelector({
   currentType,
   currentDate,
@@ -88,7 +106,6 @@ export default function ReportsPeriodSelector({
   compareEndDate: initialCompareEndDate,
   today,
   currentYearNum,
-  exportData,
 }: ReportsPeriodSelectorProps) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
@@ -183,12 +200,7 @@ export default function ReportsPeriodSelector({
   const thisMonthStr = today.slice(0, 7);
   const lastMonthStr = addMonths(thisMonthStr, -1);
 
-  const isTodayActive = currentType === "daily" && currentDate === today;
-  const isLast7DaysActive = currentType === "custom" && currentStartDate === last7DaysStart && currentEndDate === today;
-  const isLast30DaysActive = currentType === "custom" && currentStartDate === last30DaysStart && currentEndDate === today;
-  const isThisMonthActive = currentType === "monthly" && currentMonth === thisMonthStr;
-  const isLastMonthActive = currentType === "monthly" && currentMonth === lastMonthStr;
-
+  // Preset helper
   function selectPreset(preset: "today" | "last7" | "last30" | "thisMonth" | "lastMonth") {
     if (preset === "today") {
       setType("daily");
@@ -215,52 +227,6 @@ export default function ReportsPeriodSelector({
     }
   }
 
-  // CSV Export Handler
-  function handleExportCsv() {
-    if (!exportData) return;
-    const lines: string[] = [];
-    lines.push(`"รายงาน","${exportData.title}"`);
-    lines.push(`"ช่วงเวลารายงาน","${exportData.periodLabel}"`);
-    lines.push(`"วันที่ส่งออกข้อมูล","${exportData.generatedAt}"`);
-    lines.push("");
-    lines.push('"--- สรุปภาพรวม (Summary) ---"');
-    lines.push(`"ยอดขายรวม (บาท)","${exportData.summary.totalSales.toFixed(2)}"`);
-    lines.push(`"จำนวนออเดอร์ที่สำเร็จ (รายการ)","${exportData.summary.completedOrders}"`);
-    lines.push(`"ยอดขายเฉลี่ยต่อออเดอร์ (บาท)","${exportData.summary.aov.toFixed(2)}"`);
-    lines.push(`"จำนวนออเดอร์ที่ยกเลิก (รายการ)","${exportData.summary.cancelledOrders}"`);
-    lines.push(`"อัตราการยกเลิก (%)","${exportData.summary.cancellationRate.toFixed(1)}%"`);
-    lines.push("");
-    lines.push('"--- รายละเอียดตามช่วงเวลา (Period Breakdown) ---"');
-    lines.push('"ช่วงเวลา/วันที่","ยอดขาย (บาท)","จำนวนออเดอร์ (รายการ)"');
-    for (const row of exportData.breakdown) {
-      lines.push(`"${row.period}","${row.sales.toFixed(2)}","${row.orders}"`);
-    }
-    lines.push("");
-    lines.push('"--- เมนูขายดีที่สุด (Best Selling Items) ---"');
-    lines.push('"อันดับ","ชื่อเมนู","จำนวนที่ขายได้ (จาน/รายการ)","ยอดขายรวม (บาท)"');
-    for (const m of exportData.bestSellingMenus) {
-      lines.push(`"${m.rank}","${m.name.replace(/"/g, '""')}","${m.quantity}","${m.revenue.toFixed(2)}"`);
-    }
-    lines.push("");
-    lines.push('"--- ช่องทางการชำระเงิน (Payment Methods) ---"');
-    lines.push('"ช่องทาง","จำนวนออเดอร์","ยอดเงินรวม (บาท)"');
-    for (const p of exportData.paymentMethods) {
-      lines.push(`"${p.method}","${p.count}","${p.amount.toFixed(2)}"`);
-    }
-
-    const csvContent = "\uFEFF" + lines.join("\r\n");
-    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.href = url;
-    const safePeriod = exportData.periodLabel.replace(/[\s\/:*?"<>|]/g, "_");
-    link.download = `smart-order-report-${safePeriod}.csv`;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    URL.revokeObjectURL(url);
-  }
-
   // Print PDF Handler
   function handlePrint() {
     window.print();
@@ -277,127 +243,51 @@ export default function ReportsPeriodSelector({
 
   return (
     <section aria-label="ตัวเลือกช่วงเวลารายงาน" className="mt-5 rounded-2xl bg-white p-5 shadow-sm sm:p-6">
-      {/* Top Header: Quick Presets & Export Actions */}
-      <div className="no-print flex flex-col gap-4 border-b border-zinc-100 pb-4 lg:flex-row lg:items-center lg:justify-between">
-        {/* Quick Preset Buttons */}
-        <div>
-          <span className="text-xs font-semibold uppercase tracking-wider text-zinc-400 block mb-1.5">
-            ตัวเลือกลัด (Quick Presets)
-          </span>
-          <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
-            <button
-              type="button"
-              onClick={() => selectPreset("today")}
-              className={`rounded-lg px-3 py-1.5 text-xs sm:text-sm font-semibold transition ${
-                isTodayActive
-                  ? "bg-orange-500 text-white shadow-xs"
-                  : "bg-orange-50 text-orange-800 hover:bg-orange-100 border border-orange-200/60"
-              }`}
-            >
-              วันนี้
-            </button>
-            <button
-              type="button"
-              onClick={() => selectPreset("last7")}
-              className={`rounded-lg px-3 py-1.5 text-xs sm:text-sm font-semibold transition ${
-                isLast7DaysActive
-                  ? "bg-orange-500 text-white shadow-xs"
-                  : "bg-orange-50 text-orange-800 hover:bg-orange-100 border border-orange-200/60"
-              }`}
-            >
-              7 วันล่าสุด
-            </button>
-            <button
-              type="button"
-              onClick={() => selectPreset("last30")}
-              className={`rounded-lg px-3 py-1.5 text-xs sm:text-sm font-semibold transition ${
-                isLast30DaysActive
-                  ? "bg-orange-500 text-white shadow-xs"
-                  : "bg-orange-50 text-orange-800 hover:bg-orange-100 border border-orange-200/60"
-              }`}
-            >
-              30 วันล่าสุด
-            </button>
-            <button
-              type="button"
-              onClick={() => selectPreset("thisMonth")}
-              className={`rounded-lg px-3 py-1.5 text-xs sm:text-sm font-semibold transition ${
-                isThisMonthActive
-                  ? "bg-orange-500 text-white shadow-xs"
-                  : "bg-orange-50 text-orange-800 hover:bg-orange-100 border border-orange-200/60"
-              }`}
-            >
-              เดือนนี้
-            </button>
-            <button
-              type="button"
-              onClick={() => selectPreset("lastMonth")}
-              className={`rounded-lg px-3 py-1.5 text-xs sm:text-sm font-semibold transition ${
-                isLastMonthActive
-                  ? "bg-orange-500 text-white shadow-xs"
-                  : "bg-orange-50 text-orange-800 hover:bg-orange-100 border border-orange-200/60"
-              }`}
-            >
-              เดือนก่อน
-            </button>
-          </div>
+      {/* 1. แถวบน: แถบเลือกโหมดช่วงเวลา (ซ้าย) คู่กับปุ่ม พิมพ์รายงาน (PDF) (ขวา) */}
+      <div className="no-print flex flex-wrap items-center justify-between gap-3 border-b border-zinc-100 pb-4">
+        {/* แถบเลือกโหมดช่วงเวลา */}
+        <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
+          {[
+            { id: "daily", label: "รายวัน (Daily)" },
+            { id: "weekly", label: "รายสัปดาห์ (Weekly)" },
+            { id: "monthly", label: "รายเดือน (Monthly)" },
+            { id: "yearly", label: "รายปี (Yearly)" },
+            { id: "custom", label: "กำหนดช่วงเวลาเอง (Custom)" },
+          ].map((tab) => {
+            const isActive = type === tab.id;
+            return (
+              <button
+                key={tab.id}
+                type="button"
+                onClick={() => {
+                  const nextType = tab.id as ReportPeriodType;
+                  setType(nextType);
+                }}
+                className={`rounded-xl px-4 py-2 text-xs sm:text-sm font-semibold transition ${
+                  isActive
+                    ? "bg-orange-500 text-white shadow-xs"
+                    : "bg-zinc-100 text-zinc-700 hover:bg-zinc-200"
+                }`}
+              >
+                {tab.label}
+              </button>
+            );
+          })}
         </div>
 
-        {/* Export & Print Action Buttons */}
-        <div className="flex flex-wrap items-center gap-2">
-          {exportData && (
-            <button
-              type="button"
-              onClick={handleExportCsv}
-              className="flex items-center gap-1.5 rounded-xl border border-zinc-200 bg-white px-3.5 py-2 text-xs sm:text-sm font-semibold text-zinc-700 shadow-xs hover:bg-zinc-50 hover:text-zinc-900 transition"
-              title="ส่งออกรายงานเป็นไฟล์ CSV (รองรับ Excel ภาษาไทยสมบูรณ์)"
-            >
-              <span>📥</span>
-              <span>Export CSV (Excel)</span>
-            </button>
-          )}
-          <button
-            type="button"
-            onClick={handlePrint}
-            className="flex items-center gap-1.5 rounded-xl border border-orange-200 bg-orange-500 px-3.5 py-2 text-xs sm:text-sm font-semibold text-white shadow-xs hover:bg-orange-600 transition"
-            title="สั่งพิมพ์รายงาน หรือบันทึกเป็น PDF"
-          >
-            <span>🖨️</span>
-            <span>พิมพ์รายงาน (PDF)</span>
-          </button>
-        </div>
+        {/* ปุ่มพิมพ์รายงาน (PDF) เพียงปุ่มเดียว */}
+        <button
+          type="button"
+          onClick={handlePrint}
+          className="flex items-center gap-1.5 rounded-xl border border-orange-200 bg-orange-500 px-4 py-2 text-xs sm:text-sm font-semibold text-white shadow-xs hover:bg-orange-600 transition"
+          title="สั่งพิมพ์รายงาน หรือบันทึกเป็น PDF"
+        >
+          <span>🖨️</span>
+          <span>พิมพ์รายงาน (PDF)</span>
+        </button>
       </div>
 
-      {/* Type Tabs */}
-      <div className="no-print mt-4 flex flex-wrap items-center gap-2 border-b border-zinc-100 pb-4">
-        {[
-          { id: "daily", label: "รายวัน (Daily)" },
-          { id: "weekly", label: "รายสัปดาห์ (Weekly)" },
-          { id: "monthly", label: "รายเดือน (Monthly)" },
-          { id: "yearly", label: "รายปี (Yearly)" },
-          { id: "custom", label: "กำหนดช่วงเวลาเอง (Custom)" },
-        ].map((tab) => {
-          const isActive = type === tab.id;
-          return (
-            <button
-              key={tab.id}
-              type="button"
-              onClick={() => {
-                const nextType = tab.id as ReportPeriodType;
-                setType(nextType);
-              }}
-              className={`rounded-xl px-4 py-2 text-xs sm:text-sm font-semibold transition ${
-                isActive
-                  ? "bg-orange-500 text-white shadow-xs"
-                  : "bg-zinc-100 text-zinc-700 hover:bg-zinc-200"
-              }`}
-            >
-              {tab.label}
-            </button>
-          );
-        })}
-      </div>
-
+      {/* 2. แถวล่าง: ช่องเลือกวันที่/เดือน/ปี ของโหมดนั้น และตัวเลือกเปรียบเทียบข้อมูล */}
       <form onSubmit={handleSubmit} className="no-print mt-4 space-y-4">
         {/* Period Inputs based on Type */}
         <div className="flex flex-wrap items-end gap-4">
@@ -548,9 +438,9 @@ export default function ReportsPeriodSelector({
           )}
 
           {type === "custom" && (
-            <div className="flex flex-wrap items-center gap-2">
+            <div className="flex flex-wrap items-end gap-3">
               <div>
-                <label htmlFor="report-start" className="block text-xs font-medium text-zinc-700">
+                <label htmlFor="report-start" className="block text-xs font-semibold text-zinc-600">
                   วันที่เริ่มต้น
                 </label>
                 <input
@@ -559,12 +449,12 @@ export default function ReportsPeriodSelector({
                   value={startDate}
                   max={endDate || today}
                   onChange={(e) => setStartDate(e.target.value)}
-                  className="mt-1 block rounded-xl border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 outline-none focus:border-orange-500 focus:ring-1 focus:ring-orange-500"
+                  className="mt-1 block rounded-xl border border-zinc-300 bg-white px-3 py-1.5 text-xs sm:text-sm text-zinc-900 outline-none focus:border-orange-500"
                 />
               </div>
-              <span className="mt-5 text-sm text-zinc-400">ถึง</span>
+              <span className="pb-2 text-xs text-zinc-400">ถึง</span>
               <div>
-                <label htmlFor="report-end" className="block text-xs font-medium text-zinc-700">
+                <label htmlFor="report-end" className="block text-xs font-semibold text-zinc-600">
                   วันที่สิ้นสุด
                 </label>
                 <input
@@ -573,8 +463,33 @@ export default function ReportsPeriodSelector({
                   value={endDate}
                   max={today}
                   onChange={(e) => setEndDate(e.target.value)}
-                  className="mt-1 block rounded-xl border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 outline-none focus:border-orange-500 focus:ring-1 focus:ring-orange-500"
+                  className="mt-1 block rounded-xl border border-zinc-300 bg-white px-3 py-1.5 text-xs sm:text-sm text-zinc-900 outline-none focus:border-orange-500"
                 />
+              </div>
+
+              {/* Quick range presets for custom */}
+              <div className="flex items-center gap-1.5 pb-0.5">
+                <button
+                  type="button"
+                  onClick={() => selectPreset("last7")}
+                  className="rounded-lg border border-orange-200/60 bg-orange-50 px-2.5 py-1.5 text-xs font-semibold text-orange-800 hover:bg-orange-100"
+                >
+                  7 วันล่าสุด
+                </button>
+                <button
+                  type="button"
+                  onClick={() => selectPreset("last30")}
+                  className="rounded-lg border border-orange-200/60 bg-orange-50 px-2.5 py-1.5 text-xs font-semibold text-orange-800 hover:bg-orange-100"
+                >
+                  30 วันล่าสุด
+                </button>
+                <button
+                  type="button"
+                  onClick={() => selectPreset("thisMonth")}
+                  className="rounded-lg border border-orange-200/60 bg-orange-50 px-2.5 py-1.5 text-xs font-semibold text-orange-800 hover:bg-orange-100"
+                >
+                  เดือนนี้
+                </button>
               </div>
             </div>
           )}

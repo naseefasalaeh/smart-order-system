@@ -1,4 +1,5 @@
 import DashboardSidebar from "@/components/dashboard-sidebar";
+import ReportOrderHistory from "@/components/report-order-history";
 import ReportsCharts, {
   type ChartBucket,
   type HorizontalBarItem,
@@ -6,7 +7,7 @@ import ReportsCharts, {
   BestSellingSection,
   DemographicsSection,
 } from "@/components/reports-charts";
-import ReportsPeriodSelector, { type ReportExportData } from "@/components/reports-period-selector";
+import ReportsPeriodSelector from "@/components/reports-period-selector";
 import {
   bangkokToday,
   bangkokCurrentMonth,
@@ -102,12 +103,18 @@ async function fetchReportData(supabase: SupabaseClient, start: string, end: str
         total_amount,
         dining_type,
         status,
+        note,
         created_at,
         updated_at,
+        restaurant_tables (
+          table_number
+        ),
         order_items (
           id,
           quantity,
+          unit_price,
           subtotal,
+          note,
           menu_name_snapshot,
           menus (
             name
@@ -146,7 +153,32 @@ async function fetchReportData(supabase: SupabaseClient, start: string, end: str
     supabase.rpc("member_menu_statistics", { p_start: start, p_end: end }),
   ]);
 
-  const allOrders = ordersResult.data ?? [];
+  const rawOrders = ordersResult.data ?? [];
+  const successfulPaymentStatuses = ["paid", "completed", "success", "successful"];
+
+  const allOrders = rawOrders.map((order) => {
+    const successfulPayment = (order.payments ?? []).find((p) =>
+      successfulPaymentStatuses.includes(String(p.status ?? "").toLowerCase())
+    ) ?? order.payments?.[0];
+
+    const rawMethod = successfulPayment?.payment_method;
+    const paymentMethod = rawMethod
+      ? paymentMethodLabels[rawMethod] ?? rawMethod
+      : order.status === "completed"
+      ? "เงินสด"
+      : null;
+
+    return {
+      ...order,
+      payment_method: paymentMethod,
+      paid_at: successfulPayment?.paid_at ?? null,
+      order_items: (order.order_items ?? []).map((item) => ({
+        ...item,
+        order_item_options: item.order_item_options ?? [],
+      })),
+    };
+  });
+
   const error = ordersResult.error ?? paymentsResult.error ?? memberStats.error;
 
   const totalOrdersCount = allOrders.length;
@@ -160,7 +192,6 @@ async function fetchReportData(supabase: SupabaseClient, start: string, end: str
   const completedDineInCount = completedOrders.filter((order) => order.dining_type === "dine_in").length;
   const completedTakeawayCount = completedOrders.filter((order) => order.dining_type === "takeaway").length;
 
-  const successfulPaymentStatuses = ["paid", "completed", "success", "successful"];
   const completedOrderIds = new Set(completedOrders.map((o) => o.id));
 
   // Link payments strictly to completed orders in this period to maintain 100% data consistency
@@ -237,6 +268,7 @@ async function fetchReportData(supabase: SupabaseClient, start: string, end: str
     error,
     allOrders,
     completedOrders,
+    cancelledOrders,
     payments: paidCompletedPayments,
     totalSales,
     completedOrderCount,
@@ -715,35 +747,8 @@ export default async function ReportsPage({ searchParams }: { searchParams: Prom
   const aovComparison = compareData ? calcPctChange(primaryData.averageOrderValue, compareData.averageOrderValue) : null;
   const cancelledComparison = compareData ? calcPctChange(primaryData.cancelledCount, compareData.cancelledCount) : null;
 
-  // 10. Prepare Export Data for Excel (CSV)
-  const exportData: ReportExportData = {
-    title: "รายงานผลการดำเนินงาน Smart Order",
-    periodLabel: primaryLabel,
-    generatedAt: new Date().toLocaleString("th-TH", { timeZone: "Asia/Bangkok" }) + " (Asia/Bangkok)",
-    summary: {
-      totalSales: primaryData.totalSales,
-      completedOrders: primaryData.completedOrderCount,
-      aov: primaryData.averageOrderValue,
-      cancelledOrders: primaryData.cancelledCount,
-      cancellationRate,
-    },
-    breakdown: buckets.map((b) => ({
-      period: b.label,
-      sales: b.sales,
-      orders: b.orders,
-    })),
-    bestSellingMenus: primaryData.bestSellingMenus.map((m, idx) => ({
-      rank: idx + 1,
-      name: m.name,
-      quantity: m.quantity,
-      revenue: m.revenue,
-    })),
-    paymentMethods: primaryData.paymentMethods.map((p) => ({
-      method: paymentMethodLabels[p.method] ?? p.method,
-      count: p.count,
-      amount: p.amount,
-    })),
-  };
+  // 10. Letterhead Timestamp
+  const generatedAt = new Date().toLocaleString("th-TH", { timeZone: "Asia/Bangkok" }) + " (Asia/Bangkok)";
 
   const rankedBestSellingMenus = primaryData.bestSellingMenus.map((m, idx) => ({
     rank: idx + 1,
@@ -769,7 +774,7 @@ export default async function ReportsPage({ searchParams }: { searchParams: Prom
               </div>
               <div className="text-right text-xs text-zinc-600">
                 <p className="font-bold text-zinc-900">ช่วงเวลา: {primaryLabel}</p>
-                <p>พิมพ์เมื่อ: {exportData.generatedAt}</p>
+                <p>พิมพ์เมื่อ: {generatedAt}</p>
               </div>
             </div>
           </header>
@@ -785,7 +790,7 @@ export default async function ReportsPage({ searchParams }: { searchParams: Prom
             </div>
           </header>
 
-          {/* 1. Period Selector Component with Quick Presets, Export CSV and Print PDF */}
+          {/* 1. Period Selector Component with Mode Tabs and Print PDF */}
           <ReportsPeriodSelector
             key={`${periodType}-${primaryDate}-${primaryWeekDate}-${primaryMonth}-${primaryYear}-${primaryStartDate}-${primaryEndDate}-${isCompare}-${compareType}-${compareDate}-${compareWeekDate}-${compareMonth}-${compareYear}-${compareStartDate}-${compareEndDate}`}
             currentType={periodType}
@@ -805,7 +810,6 @@ export default async function ReportsPage({ searchParams }: { searchParams: Prom
             compareEndDate={compareEndDate}
             today={today}
             currentYearNum={currentYearNum}
-            exportData={exportData}
           />
 
           {pageError ? (
@@ -1066,8 +1070,8 @@ export default async function ReportsPage({ searchParams }: { searchParams: Prom
                 </section>
               </div>
 
-              {/* Page 4 in Print: Customer Demographics */}
-              <div id="report-page-4" className="print-page-break-before print:pt-1 space-y-6 print:space-y-2">
+              {/* Section 4 in Print: Customer Demographics (Natural flow, breaks cleanly across pages) */}
+              <div id="report-page-4" className="print:pt-1 space-y-6 print:space-y-2">
                 <div className="hidden print:block border-b-2 border-orange-500 pb-1 mb-1.5">
                   <h3 className="text-xs font-bold text-zinc-900 uppercase">
                     ส่วนที่ 4: สถิติเมนูตามกลุ่มลูกค้า (Customer Demographics)
@@ -1083,9 +1087,12 @@ export default async function ReportsPage({ searchParams }: { searchParams: Prom
                 {/* Print Document Footer */}
                 <footer className="hidden print:flex items-center justify-between border-t border-zinc-200 pt-2 mt-4 text-[8pt] text-zinc-500">
                   <span>Smart Order System · รายงานสรุปผลการดำเนินงานและสถิติการขาย</span>
-                  <span>หน้า 4 จาก 4</span>
+                  <span>รายงานสรุปผลการดำเนินงาน</span>
                 </footer>
               </div>
+
+              {/* 10. ประวัติคำสั่งซื้อย้อนหลัง (Order History Table) & Slide-over Drawer (Web only) */}
+              <ReportOrderHistory orders={primaryData.allOrders} />
             </>
           )}
         </div>

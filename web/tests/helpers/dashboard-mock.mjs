@@ -20,11 +20,12 @@ export async function startMock(port = 4401) {
     res.setHeader('Access-Control-Expose-Headers', 'content-range');
     if (req.method === 'OPTIONS') { res.end(); return; }
     let raw = ''; for await (const chunk of req) raw += chunk;
-    const body = raw ? JSON.parse(raw) : {};
+    let body = {}; try { body = raw ? JSON.parse(raw) : {}; } catch {}
     await new Promise(resolve => setTimeout(resolve, state.delay));
     let status = 200, data = null;
     const path = url.pathname;
     if (state.failWrite && !['GET', 'HEAD'].includes(req.method)) { status = 503; data = { message: 'test write unavailable', code: '08006' }; }
+    else if (path.startsWith('/storage/v1/object/')) data = { Key: 'menu-images/' + path.split('/').pop(), Id: 'mock-id' };
     else if (path === '/auth/v1/token') data = session();
     else if (path === '/auth/v1/user') { data = user(); if (state.authError) { status = 503; data = { message: 'test auth unavailable' }; } }
     else if (path === '/auth/v1/logout') data = {};
@@ -34,6 +35,124 @@ export async function startMock(port = 4401) {
       state.rpcCalls.push({ path, body });
       state.updatedAt = new Date().toISOString();
       if (path.endsWith('/member_menu_statistics')) data=[];
+      if (path.endsWith('/admin_list_members')) {
+        data = state.catalog.admin_list_members ?? [
+          {
+            id: '00000000-0000-4000-8000-000000000101',
+            member_code: 'MEM-00001',
+            phone: '+66811112222',
+            gender: 'female',
+            age_range: '25-34',
+            promotion_consent: true,
+            created_at: state.updatedAt,
+            order_count: 5,
+            total_spent: 850
+          }
+        ];
+      }
+      if (path.endsWith('/admin_member_analytics')) {
+        data = state.catalog.admin_member_analytics ?? {
+          total_members: 1,
+          total_orders: 5,
+          total_spent: 850,
+          monthly_signups: [{ month: '2026-11', count: 1 }],
+          gender_distribution: [{ gender: 'female', count: 1 }],
+          age_distribution: [{ age_range: '25-34', count: 1 }]
+        };
+      }
+      if (path.endsWith('/admin_get_member_detail')) {
+        data = state.catalog.admin_get_member_detail ?? {
+          id: body.p_member_id || '00000000-0000-4000-8000-000000000101',
+          member_code: 'MEM-00001',
+          phone: '+66811112222',
+          gender: 'female',
+          age_range: '25-34',
+          promotion_consent: true,
+          admin_note: state.catalog.admin_note ?? 'ลูกค้าประจำ ชอบทานเผ็ดน้อย',
+          created_at: state.updatedAt,
+          order_count: 4,
+          total_spent: 175,
+          device_count: 1,
+          last_order_at: state.updatedAt
+        };
+      }
+      if (path.endsWith('/admin_save_member_note')) {
+        state.catalog.admin_note = body.p_note;
+        data = null;
+      }
+      if (path.endsWith('/admin_update_member')) {
+        data = { id: body.p_member_id, phone: body.p_phone, gender: body.p_gender, age_range: body.p_age, promotion_consent: body.p_promotions };
+      }
+      if (path.endsWith('/admin_get_member_orders')) {
+        data = state.catalog.admin_get_member_orders ?? [
+          {
+            id: 'ord-01',
+            order_number: 1,
+            table_id: 1,
+            table_number: '1',
+            dining_type: 'dine_in',
+            status: 'completed',
+            total_amount: 50,
+            created_at: new Date(Date.now() - 3600000 * 24).toISOString(),
+            items: [{ id: 1, menu_name: 'กะเพราไก่', quantity: 2, unit_price: 25, subtotal: 50, options: [] }]
+          },
+          {
+            id: 'ord-02',
+            order_number: 2,
+            table_id: 1,
+            table_number: '1',
+            dining_type: 'dine_in',
+            status: 'completed',
+            total_amount: 45,
+            created_at: new Date(Date.now() - 3600000 * 12).toISOString(),
+            items: [{ id: 2, menu_name: 'กะเพราไก่', quantity: 1, unit_price: 45, subtotal: 45, options: [] }]
+          },
+          {
+            id: 'ord-03',
+            order_number: 3,
+            table_id: 2,
+            table_number: '2',
+            dining_type: 'dine_in',
+            status: 'completed',
+            total_amount: 40,
+            created_at: new Date(Date.now() - 3600000 * 6).toISOString(),
+            items: [{ id: 3, menu_name: 'ข้าวผัดกุ้ง', quantity: 1, unit_price: 40, subtotal: 40, options: [] }]
+          },
+          {
+            id: 'ord-04',
+            order_number: 4,
+            table_id: 1,
+            table_number: '1',
+            dining_type: 'dine_in',
+            status: 'completed',
+            total_amount: 40,
+            created_at: new Date(Date.now() - 3600000 * 2).toISOString(),
+            items: [{ id: 4, menu_name: 'ต้มยำกุ้ง', quantity: 1, unit_price: 40, subtotal: 40, options: [] }]
+          },
+          {
+            id: 'ord-cancelled-01',
+            order_number: 101,
+            table_id: 1,
+            table_number: '1',
+            dining_type: 'dine_in',
+            status: 'cancelled',
+            total_amount: 50,
+            created_at: new Date(Date.now() - 3600000 * 48).toISOString(),
+            items: [{ id: 5, menu_name: 'ผัดซีอิ๊ว', quantity: 1, unit_price: 50, subtotal: 50, options: [] }]
+          },
+          {
+            id: 'ord-cancelled-02',
+            order_number: 181,
+            table_id: 1,
+            table_number: '1',
+            dining_type: 'dine_in',
+            status: 'cancelled',
+            total_amount: 60,
+            created_at: new Date(Date.now() - 3600000 * 72).toISOString(),
+            items: [{ id: 6, menu_name: 'มาม่าผัด', quantity: 1, unit_price: 60, subtotal: 60, options: [] }]
+          }
+        ];
+      }
       if (path.endsWith('/enroll_member')) {
         state.catalog.member_devices=[{token_hash:body.p_hash,active:!state.memberExists,created_at:state.updatedAt,members:{phone:body.p_phone}}];
       }

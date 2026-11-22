@@ -26,9 +26,16 @@ export default function OrdersView({ initial, userId, fullName, role }: { initia
           <header>
             <p className="font-semibold text-orange-500">รับชำระเงิน</p>
             <h2 className="mt-1 text-3xl font-bold">รอชำระเงิน</h2>
-            <p className="mt-2 text-zinc-600">เลือกจ่ายทั้งหมดหรือบางจาน รวมได้เฉพาะรอบการใช้โต๊ะเดียวกัน</p>
+            <p className="mt-2 text-zinc-600">เลือกจานที่ต้องการคิดเงิน (ระบบรวมค่าท็อปปิ้งให้แล้ว)</p>
           </header>
-          {!error && [...sessions].map(([id, sessionOrders]) => <SessionPayment key={id} orders={sessionOrders} refresh={refreshAfterMutation} />)}
+          {!error && [...sessions].map(([id, sessionOrders]) => (
+            <SessionPayment
+              key={id}
+              orders={sessionOrders}
+              allOrders={orders}
+              refresh={refreshAfterMutation}
+            />
+          ))}
 
           {error ? (
             <div role="alert" className="mt-8 rounded-2xl bg-red-50 p-6 text-red-700 shadow-sm">โหลดออเดอร์ไม่สำเร็จ กรุณาลองใหม่<OrderViewRetry refresh={refresh} /></div>

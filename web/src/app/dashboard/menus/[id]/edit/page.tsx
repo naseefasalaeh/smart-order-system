@@ -7,6 +7,7 @@ import { notFound, redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { requireDashboardContext, requireDashboardRole } from "@/lib/dashboard-auth";
 import RecipeIngredientSelector from "./RecipeIngredientSelector";
+import MenuImageUploader from "@/components/menu-image-uploader";
 
 type EditMenuPageProps = {
   params: Promise<{
@@ -365,23 +366,7 @@ export default async function EditMenuPage({
               />
             </div>
 
-            <div>
-              <label
-                htmlFor="image_url"
-                className="mb-2 block font-semibold text-zinc-700"
-              >
-                URL รูปภาพ
-              </label>
-
-              <input
-                id="image_url"
-                name="image_url"
-                type="url"
-                defaultValue={menu.image_url ?? ""}
-                placeholder="https://example.com/image.jpg"
-                className="w-full rounded-xl border border-zinc-300 px-4 py-3 text-zinc-900 outline-none focus:border-orange-500 focus:ring-2 focus:ring-orange-100"
-              />
-            </div>
+            <MenuImageUploader initialImageUrl={menu.image_url} />
 
             <label className="flex cursor-pointer items-center gap-3 rounded-xl border border-zinc-200 p-4">
               <input

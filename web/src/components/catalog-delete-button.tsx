@@ -5,8 +5,20 @@ import { useRouter } from "next/navigation";
 import { deleteCatalogItem } from "@/app/dashboard/catalog-delete-actions";
 import type { DeleteResult } from "@/lib/catalog-deletion";
 
-export default function CatalogDeleteButton({ id, name, kind, className = "ml-3 inline-block" }: {
-  id: number; name: string; kind: "menu" | "ingredient"; className?: string;
+export default function CatalogDeleteButton({
+  id,
+  name,
+  kind,
+  className = "ml-3 inline-block",
+  buttonClassName,
+  buttonContent,
+}: {
+  id: number;
+  name: string;
+  kind: "menu" | "ingredient";
+  className?: string;
+  buttonClassName?: string;
+  buttonContent?: React.ReactNode;
 }) {
   const dialog = useRef<HTMLDialogElement>(null);
   const busy = useRef(false);
@@ -45,9 +57,19 @@ export default function CatalogDeleteButton({ id, name, kind, className = "ml-3 
 
   return (
     <span className={className}>
-      <button type="button" className="min-h-11 rounded-lg border border-red-300 px-4 py-2 text-sm font-semibold text-red-700 hover:bg-red-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-600 focus-visible:ring-offset-2"
-        onClick={() => { setConfirmation(""); setResult(null); dialog.current?.showModal(); }}>
-        ลบ{label}
+      <button
+        type="button"
+        className={
+          buttonClassName ??
+          "min-h-11 rounded-lg border border-red-300 px-4 py-2 text-sm font-semibold text-red-700 hover:bg-red-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-600 focus-visible:ring-offset-2"
+        }
+        onClick={() => {
+          setConfirmation("");
+          setResult(null);
+          dialog.current?.showModal();
+        }}
+      >
+        {buttonContent ?? `ลบ${label}`}
       </button>
       {notice && <span role="status" className="mt-2 block text-sm text-green-700">{notice}</span>}
       <dialog ref={dialog} aria-labelledby={titleId}

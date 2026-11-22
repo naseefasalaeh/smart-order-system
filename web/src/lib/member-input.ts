@@ -42,3 +42,30 @@ export function formatThaiPhone(phone?: string | null): string {
 }
 
 export const memberCookie = "smart-order-member";
+
+export const MEMBER_PASSWORD_REGEX = /^[A-Za-z0-9]{6}$/;
+export const MEMBER_PASSWORD_HINT = "ตั้งรหัสผ่าน 6 ตัวอักษร (ใช้ได้เฉพาะภาษาอังกฤษ A-Z และตัวเลข 0-9)";
+export const MEMBER_PASSWORD_ERROR = "รหัสผ่านต้องมีความยาว 6 ตัวอักษรพอดี และใช้ได้เฉพาะภาษาอังกฤษ (A-Z, a-z) และตัวเลข (0-9) เท่านั้น";
+
+export function validateMemberPassword(password: unknown): { valid: boolean; error?: string } {
+  if (typeof password !== "string") {
+    return { valid: false, error: MEMBER_PASSWORD_ERROR };
+  }
+  const trimmed = password.trim();
+  if (trimmed.length !== 6) {
+    return { valid: false, error: "รหัสผ่านต้องมีความยาว 6 ตัวอักษรพอดี" };
+  }
+  if (!MEMBER_PASSWORD_REGEX.test(trimmed)) {
+    return { valid: false, error: "รหัสผ่านใช้ได้เฉพาะตัวอักษรภาษาอังกฤษ (A-Z, a-z) และตัวเลข (0-9) เท่านั้น" };
+  }
+  return { valid: true };
+}
+
+export function generateRandomMemberPassword(): string {
+  const chars = "23456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz";
+  let result = "";
+  for (let i = 0; i < 6; i++) {
+    result += chars.charAt(Math.floor(Math.random() * chars.length));
+  }
+  return result;
+}
